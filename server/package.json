@@ -19,6 +19,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:validate": "prisma validate",
+    "preseed:development": "npm run build",
+    "seed:development": "node scripts/seed-development.mjs",
     "preadmin:bootstrap": "npm run prisma:generate",
     "admin:bootstrap": "node -r dotenv/config scripts/bootstrap-admin.mjs",
     "lint": "oxlint --type-aware src/ test/",

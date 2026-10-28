@@ -43,6 +43,50 @@ and grant Location subtrees to Asset Manager and Procurement/Finance users.
 Those grants include descendant Locations and their Stores; grant/revocation
 history is retained indefinitely.
 
+### Development example data
+
+Use the development seed **instead of** `admin:bootstrap`, on a new, empty,
+disposable development database after applying migrations. Do not use it on
+production or an existing installation. It refuses to overwrite accounts,
+passwords, permissions, or business data, including on a second run.
+
+Configure `server/.env` as above, pointing `DATABASE_URL` to your disposable
+database, and set `NODE_ENV=development`. Then run:
+
+```sh
+cd server
+npm run prisma:migrate:deploy
+CONFIRM_SEED_DATABASE=asset_erp_dev npm run seed:development
+```
+
+Replace `asset_erp_dev` with the exact database name from `DATABASE_URL`.
+The command builds the server first and runs `server/scripts/seed-development.mjs`.
+Seed data is defined in `server/src/development/seed-data.ts`.
+
+The seed creates an example organization, Headquarters and child IT location,
+a Store, two categories, two received assets, and these example logins:
+
+| Email | Role |
+|---|---|
+| `admin@example.test` | Administrator: users, locations, categories |
+| `assets@example.test` | Asset Manager: asset register and profile edits |
+| `finance@example.test` | Procurement/Finance: scoped location/store reads |
+
+Each user has a different randomly generated temporary password. The
+organization ID and passwords are written to `server/.seed-credentials.json`
+with owner-only permissions, never printed in command logs or stored in
+source. Open this local file privately to obtain login credentials; all users
+must change their password at first sign-in. Keep the file out of Git and
+delete it once passwords have been changed. The seed refuses to overwrite an
+existing credentials file. `SEED_CREDENTIALS_FILE` can select an alternative
+private output path outside the repository.
+
+Start the API with `npm run start:dev`, and in another terminal run
+`cd client && pnpm dev`. Use the organization ID from the credentials file
+alongside the selected email and generated password. The Administrator does
+not have operational asset access; use the Asset Manager to see sample assets.
+This seed does not create receiving, custody, or other unimplemented workflows.
+
 Access tokens are held in memory; rotating refresh tokens use an HTTP-only
 cookie. Password changes require at least 8 characters and revoke active
 sessions. Administrators can create asset categories. Asset Managers can
