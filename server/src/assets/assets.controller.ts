@@ -2,11 +2,13 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -18,6 +20,8 @@ import { CreateAssetDto } from './dto/create-asset.dto.js';
 import { ListAssetCategoriesQueryDto } from './dto/list-asset-categories-query.dto.js';
 import { ListAssetsQueryDto } from './dto/list-assets-query.dto.js';
 import { AssetsService } from './assets.service.js';
+import { UpdateAssetProfileDto } from './dto/update-asset-profile.dto.js';
+import { parseAssetVersion } from './asset-version.js';
 
 @Controller('assets')
 @UseGuards(AccessTokenGuard)
@@ -64,5 +68,20 @@ export class AssetsController {
     @Param('assetId', new ParseUUIDPipe()) assetId: string,
   ) {
     return this.assets.get(actor, assetId);
+  }
+
+  @Put(':assetId/profile')
+  updateProfile(
+    @CurrentActor() actor: AuthenticatedActor,
+    @Param('assetId', new ParseUUIDPipe()) assetId: string,
+    @Headers('if-match') ifMatch: string | undefined,
+    @Body() dto: UpdateAssetProfileDto,
+  ) {
+    return this.assets.updateProfile(
+      actor,
+      assetId,
+      parseAssetVersion(ifMatch),
+      dto,
+    );
   }
 }

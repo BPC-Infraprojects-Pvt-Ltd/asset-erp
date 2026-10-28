@@ -3,10 +3,12 @@ import { Route } from "../../routes/assets.$assetId";
 import { authErrorMessage } from "../auth/auth-errors";
 import { protectedQueryKey, useAuthStore } from "../auth/auth-store";
 import { assetsApi } from "./assets-api";
+import { AssetProfileForm } from "./asset-profile-form";
 
 export function AssetDetailPage() {
   const { assetId } = Route.useParams();
   const role = useAuthStore((state) => state.session?.user.role);
+  const generation = useAuthStore((state) => state.generation);
   const assetQuery = useQuery({
     queryKey: protectedQueryKey("asset", assetId),
     queryFn: () => assetsApi.get(assetId),
@@ -84,6 +86,18 @@ export function AssetDetailPage() {
             </div>
           </dl>
         </section>
+      )}
+      {assetQuery.data && role === "ASSET_MANAGER" && (
+        <AssetProfileForm
+          key={`${generation}:${assetId}`}
+          asset={assetQuery.data}
+          reload={async () => {
+            const result = await assetQuery.refetch({ throwOnError: true });
+            if (!result.data)
+              throw new Error("The latest asset was not returned.");
+            return result.data;
+          }}
+        />
       )}
     </section>
   );
