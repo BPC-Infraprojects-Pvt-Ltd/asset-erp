@@ -13,6 +13,7 @@ import {
   AssetAvailability,
   AssetCondition,
   AssetLifecycle,
+  AssetVerification,
 } from '../../generated/prisma/enums.js';
 
 export class ListAssetsQueryDto {
@@ -54,4 +55,14 @@ export class ListAssetsQueryDto {
   @IsOptional()
   @IsEnum(AssetCondition)
   condition?: AssetCondition;
+
+  @IsOptional()
+  @IsEnum(AssetVerification)
+  verification?: AssetVerification;
+
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MaxLength(150)
+  serialNumberExact?: string;
 }

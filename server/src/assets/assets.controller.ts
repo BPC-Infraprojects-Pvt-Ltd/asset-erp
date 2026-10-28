@@ -22,6 +22,8 @@ import { ListAssetsQueryDto } from './dto/list-assets-query.dto.js';
 import { AssetsService } from './assets.service.js';
 import { UpdateAssetProfileDto } from './dto/update-asset-profile.dto.js';
 import { parseAssetVersion } from './asset-version.js';
+import { parseAssetCategoryVersion } from './asset-version.js';
+import { UpdateAssetCategoryDto } from './dto/update-asset-category.dto.js';
 
 @Controller('assets')
 @UseGuards(AccessTokenGuard)
@@ -43,6 +45,47 @@ export class AssetsController {
     @Body() dto: CreateAssetCategoryDto,
   ) {
     return this.assets.createCategory(actor, dto);
+  }
+
+  @Get('categories/:categoryId')
+  getCategory(
+    @CurrentActor() actor: AuthenticatedActor,
+    @Param('categoryId', new ParseUUIDPipe()) categoryId: string,
+  ) {
+    return this.assets.getCategory(actor, categoryId);
+  }
+
+  @Put('categories/:categoryId')
+  updateCategory(
+    @CurrentActor() actor: AuthenticatedActor,
+    @Param('categoryId', new ParseUUIDPipe()) categoryId: string,
+    @Headers('if-match') ifMatch: string | undefined,
+    @Body() dto: UpdateAssetCategoryDto,
+  ) {
+    return this.assets.updateCategory(
+      actor,
+      categoryId,
+      parseAssetCategoryVersion(ifMatch),
+      dto,
+    );
+  }
+
+  @Post('categories/:categoryId/deactivate')
+  @HttpCode(HttpStatus.OK)
+  deactivateCategory(
+    @CurrentActor() actor: AuthenticatedActor,
+    @Param('categoryId', new ParseUUIDPipe()) categoryId: string,
+  ) {
+    return this.assets.setCategoryActive(actor, categoryId, false);
+  }
+
+  @Post('categories/:categoryId/reactivate')
+  @HttpCode(HttpStatus.OK)
+  reactivateCategory(
+    @CurrentActor() actor: AuthenticatedActor,
+    @Param('categoryId', new ParseUUIDPipe()) categoryId: string,
+  ) {
+    return this.assets.setCategoryActive(actor, categoryId, true);
   }
 
   @Get()

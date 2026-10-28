@@ -129,6 +129,16 @@ export function AppLayout() {
             <Link
               activeProps={{ className: "nav-link active" }}
               className="nav-link"
+              search={{
+                page: 1,
+                search: "",
+                locationId: "",
+                categoryId: "",
+                lifecycle: "",
+                availability: "",
+                condition: "",
+                verification: "",
+              }}
               to="/assets"
             >
               Asset register

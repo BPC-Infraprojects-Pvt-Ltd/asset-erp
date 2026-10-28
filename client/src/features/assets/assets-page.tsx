@@ -1,6 +1,6 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { authErrorMessage } from "../auth/auth-errors";
@@ -11,9 +11,17 @@ import {
   type AssetAvailability,
   type AssetCondition,
   type AssetLifecycle,
+  type AssetVerification,
+  type AssetCategory,
   type CreateAssetCategoryInput,
   type CreateAssetInput,
 } from "./assets-api";
+import type { AssetListSearch } from "./asset-list-search";
+import { Route } from "../../routes/assets";
+import {
+  assetCategoryEditError,
+  type AssetCategoryEditError,
+} from "./asset-category-edit-error";
 
 const categorySchema = z.object({
   code: z.string().trim().min(1).max(60),
@@ -63,6 +71,12 @@ const conditionOptions: { value: AssetCondition; label: string }[] = [
   { value: "NONFUNCTIONAL", label: "Nonfunctional" },
   { value: "UNKNOWN", label: "Unknown" },
 ];
+const verificationOptions: { value: AssetVerification; label: string }[] = [
+  { value: "VERIFIED", label: "Verified" },
+  { value: "MISSING", label: "Missing" },
+  { value: "DISPUTED", label: "Disputed" },
+  { value: "NOT_CHECKED", label: "Not checked" },
+];
 const lifecycleOptions: { value: AssetLifecycle; label: string }[] = [
   { value: "RECEIVED", label: "Received" },
   { value: "ACTIVE", label: "Active" },
@@ -83,28 +97,52 @@ export function AssetsPage() {
   const role = useAuthStore((state) => state.session?.user.role);
   const isAdministrator = role === "ADMINISTRATOR";
   const isAssetManager = role === "ASSET_MANAGER";
-  const [page, setPage] = useState(1);
+  const navigate = useNavigate({ from: "/assets" });
+  const {
+    page,
+    search,
+    locationId,
+    categoryId,
+    lifecycle,
+    availability,
+    condition,
+    verification,
+  } = Route.useSearch();
   const [categoryPage, setCategoryPage] = useState(1);
   const [categorySearch, setCategorySearch] = useState("");
-  const [search, setSearch] = useState("");
-  const [locationId, setLocationId] = useState("");
-  const [categoryId, setCategoryId] = useState("");
-  const [lifecycle, setLifecycle] = useState("");
-  const [availability, setAvailability] = useState("");
-  const [condition, setCondition] = useState("");
+  const [includeInactiveCategories, setIncludeInactiveCategories] =
+    useState(false);
+  const [editingCategory, setEditingCategory] = useState<AssetCategory | null>(
+    null,
+  );
+  const [categoryEditError, setCategoryEditError] =
+    useState<AssetCategoryEditError | null>(null);
+  const [latestCategory, setLatestCategory] = useState<AssetCategory | null>(
+    null,
+  );
+  const [reviewingCategory, setReviewingCategory] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  function updateListSearch(updates: Partial<AssetListSearch>) {
+    void navigate({
+      search: (current) => ({ ...current, ...updates }),
+    });
+  }
 
   const categoriesQuery = useQuery({
     queryKey: protectedQueryKey(
       "asset-categories",
       categoryPage,
       categorySearch,
+      isAdministrator && includeInactiveCategories,
     ),
     queryFn: () =>
       assetsApi.listCategories({
         page: categoryPage,
         pageSize: 20,
         search: categorySearch || undefined,
+        includeInactive:
+          (isAdministrator && includeInactiveCategories) || undefined,
       }),
     enabled: isAdministrator || isAssetManager,
   });
@@ -123,6 +161,7 @@ export function AssetsPage() {
       lifecycle,
       availability,
       condition,
+      verification,
     ),
     queryFn: () =>
       assetsApi.list({
@@ -135,6 +174,8 @@ export function AssetsPage() {
         availability: (availability || undefined) as
           AssetAvailability | undefined,
         condition: (condition || undefined) as AssetCondition | undefined,
+        verification: (verification || undefined) as
+          AssetVerification | undefined,
       }),
     enabled: isAssetManager,
   });
@@ -149,12 +190,64 @@ export function AssetsPage() {
     },
     onError: (error) => setMessage(authErrorMessage(error)),
   });
+  const updateCategoryStatus = useMutation({
+    mutationFn: ({
+      categoryId,
+      isActive,
+    }: {
+      categoryId: string;
+      isActive: boolean;
+    }) => assetsApi.setCategoryActive(categoryId, isActive),
+    onSuccess: async () => {
+      if (editingCategory) {
+        resetCategory({
+          code: editingCategory.code,
+          name: editingCategory.name,
+        });
+      } else {
+        resetCategory({ code: "", name: "" });
+      }
+      setMessage(null);
+      await queryClient.invalidateQueries({
+        queryKey: protectedQueryKey("asset-categories"),
+      });
+    },
+    onError: (error) => setMessage(authErrorMessage(error)),
+  });
+  const updateCategory = useMutation({
+    mutationFn: (input: CreateAssetCategoryInput) => {
+      if (!editingCategory)
+        throw new Error("No asset category is being edited.");
+      return assetsApi.updateCategory(
+        editingCategory.id,
+        editingCategory.version,
+        input,
+      );
+    },
+    onSuccess: async () => {
+      resetCategory();
+      setEditingCategory(null);
+      setCategoryEditError(null);
+      setLatestCategory(null);
+      setMessage(null);
+      await queryClient.invalidateQueries({
+        queryKey: protectedQueryKey("asset-categories"),
+      });
+    },
+    onError: (error) => {
+      const editError = assetCategoryEditError(error);
+      setCategoryEditError(
+        editError.conflict || editError.requiresReview ? editError : null,
+      );
+      setMessage(editError.message);
+    },
+  });
   const createAsset = useMutation({
     mutationFn: assetsApi.create,
     onSuccess: async () => {
       resetAsset();
       setMessage(null);
-      setPage(1);
+      updateListSearch({ page: 1 });
       await queryClient.invalidateQueries({
         queryKey: protectedQueryKey("assets"),
       });
@@ -192,6 +285,32 @@ export function AssetsPage() {
   });
   const selectedAvailability = watchAsset("availability");
   const selectedCondition = watchAsset("condition");
+  const serialNumber = watchAsset("serialNumber") ?? "";
+  const [checkedSerialNumber, setCheckedSerialNumber] = useState("");
+
+  useEffect(() => {
+    const serial = serialNumber.trim();
+    if (!serial) {
+      setCheckedSerialNumber("");
+      return;
+    }
+    const timeout = window.setTimeout(
+      () => setCheckedSerialNumber(serial),
+      350,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [serialNumber]);
+
+  const serialMatchesQuery = useQuery({
+    queryKey: protectedQueryKey("asset-serial-matches", checkedSerialNumber),
+    queryFn: () =>
+      assetsApi.list({
+        page: 1,
+        pageSize: 5,
+        serialNumberExact: checkedSerialNumber,
+      }),
+    enabled: isAssetManager && checkedSerialNumber.length > 0,
+  });
 
   const submitCategory = handleCategorySubmit((values) => {
     setMessage(null);
@@ -200,7 +319,8 @@ export function AssetsPage() {
       setMessage(parsed.error.issues[0]?.message ?? "Invalid category.");
       return;
     }
-    createCategory.mutate(parsed.data);
+    if (editingCategory) updateCategory.mutate(parsed.data);
+    else createCategory.mutate(parsed.data);
   });
   const submitAsset = handleAssetSubmit((values) => {
     setMessage(null);
@@ -226,6 +346,33 @@ export function AssetsPage() {
       notes: notes || undefined,
     });
   });
+
+  async function reviewLatestCategory() {
+    if (!editingCategory) return;
+    setReviewingCategory(true);
+    setLatestCategory(null);
+    setMessage(null);
+    try {
+      const latest = await assetsApi.getCategory(editingCategory.id);
+      setLatestCategory(latest);
+      setMessage(
+        latest.version === editingCategory.version
+          ? "Latest category loaded. Your draft is kept; review the server values below before continuing."
+          : "The category changed on the server. Your draft is kept; review the latest values below.",
+      );
+    } catch (error) {
+      const reviewError = assetCategoryEditError(error);
+      const message = `Could not verify the latest category. Your draft is kept. ${reviewError.message}`;
+      setCategoryEditError({
+        conflict: false,
+        requiresReview: true,
+        message,
+      });
+      setMessage(message);
+    } finally {
+      setReviewingCategory(false);
+    }
+  }
 
   return (
     <section>
@@ -258,23 +405,113 @@ export function AssetsPage() {
           )}
           <form className="user-create-form" onSubmit={submitCategory}>
             <label htmlFor="asset-category-code">Code</label>
-            <input id="asset-category-code" {...registerCategory("code")} />
+            <input
+              id="asset-category-code"
+              maxLength={60}
+              {...registerCategory("code")}
+            />
             {categoryErrors.code && (
               <span className="field-error">{categoryErrors.code.message}</span>
             )}
             <label htmlFor="asset-category-name">Name</label>
-            <input id="asset-category-name" {...registerCategory("name")} />
+            <input
+              id="asset-category-name"
+              maxLength={150}
+              {...registerCategory("name")}
+            />
             {categoryErrors.name && (
               <span className="field-error">{categoryErrors.name.message}</span>
             )}
             <button
               className="button"
-              disabled={createCategory.isPending}
+              disabled={
+                createCategory.isPending ||
+                updateCategory.isPending ||
+                reviewingCategory ||
+                categoryEditError?.conflict ||
+                categoryEditError?.requiresReview
+              }
               type="submit"
             >
-              Create category
+              {updateCategory.isPending
+                ? "Saving…"
+                : editingCategory
+                  ? "Save category"
+                  : createCategory.isPending
+                    ? "Creating…"
+                    : "Create category"}
             </button>
+            {editingCategory && (
+              <button
+                className="button button-secondary"
+                disabled={updateCategory.isPending || reviewingCategory}
+                onClick={() => {
+                  resetCategory({ code: "", name: "" });
+                  setEditingCategory(null);
+                  setCategoryEditError(null);
+                  setLatestCategory(null);
+                  setMessage(null);
+                }}
+                type="button"
+              >
+                Cancel edit
+              </button>
+            )}
           </form>
+          {editingCategory &&
+            (categoryEditError?.conflict ||
+              categoryEditError?.requiresReview) && (
+              <div className="asset-category-conflict">
+                <button
+                  className="button button-secondary"
+                  disabled={reviewingCategory || updateCategory.isPending}
+                  onClick={() => void reviewLatestCategory()}
+                  type="button"
+                >
+                  {reviewingCategory
+                    ? "Loading latest…"
+                    : "Load latest for review (keep draft)"}
+                </button>
+                {latestCategory && (
+                  <section aria-label="Latest server category">
+                    <h3>Latest category — version {latestCategory.version}</h3>
+                    <dl>
+                      <div>
+                        <dt>Code</dt>
+                        <dd>{latestCategory.code}</dd>
+                      </div>
+                      <div>
+                        <dt>Name</dt>
+                        <dd>{latestCategory.name}</dd>
+                      </div>
+                      <div>
+                        <dt>Status</dt>
+                        <dd>
+                          {latestCategory.isActive ? "Active" : "Inactive"}
+                        </dd>
+                      </div>
+                    </dl>
+                    <button
+                      className="button"
+                      disabled={reviewingCategory || updateCategory.isPending}
+                      onClick={() => {
+                        resetCategory({
+                          code: latestCategory.code,
+                          name: latestCategory.name,
+                        });
+                        setEditingCategory(latestCategory);
+                        setCategoryEditError(null);
+                        setLatestCategory(null);
+                        setMessage(null);
+                      }}
+                      type="button"
+                    >
+                      Discard my draft and edit latest version
+                    </button>
+                  </section>
+                )}
+              </div>
+            )}
           <label className="asset-category-search">
             Search categories
             <input
@@ -285,11 +522,62 @@ export function AssetsPage() {
               value={categorySearch}
             />
           </label>
+          <label className="asset-category-inactive-toggle">
+            <input
+              checked={includeInactiveCategories}
+              onChange={(event) => {
+                setIncludeInactiveCategories(event.target.checked);
+                setCategoryPage(1);
+              }}
+              type="checkbox"
+            />
+            Show inactive categories
+          </label>
           {categoriesQuery.data?.items.length ? (
             <ul className="master-list">
               {categoriesQuery.data.items.map((category) => (
                 <li key={category.id}>
-                  <strong>{category.code}</strong> — {category.name}
+                  <div className="asset-category-row">
+                    <span>
+                      <strong>{category.code}</strong> — {category.name} (
+                      {category.isActive ? "Active" : "Inactive"})
+                    </span>
+                    <button
+                      className="button button-secondary"
+                      disabled={
+                        updateCategory.isPending ||
+                        createCategory.isPending ||
+                        updateCategoryStatus.isPending ||
+                        editingCategory !== null
+                      }
+                      onClick={() => {
+                        resetCategory({
+                          code: category.code,
+                          name: category.name,
+                        });
+                        setEditingCategory(category);
+                        setCategoryEditError(null);
+                        setLatestCategory(null);
+                        setMessage(null);
+                      }}
+                      type="button"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="button button-secondary"
+                      disabled={updateCategoryStatus.isPending}
+                      onClick={() =>
+                        updateCategoryStatus.mutate({
+                          categoryId: category.id,
+                          isActive: !category.isActive,
+                        })
+                      }
+                      type="button"
+                    >
+                      {category.isActive ? "Deactivate" : "Reactivate"}
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -368,11 +656,13 @@ export function AssetsPage() {
               <label htmlFor="asset-category">Category</label>
               <select id="asset-category" {...registerAsset("categoryId")}>
                 <option value="">Select a category</option>
-                {categoriesQuery.data?.items.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.code} — {category.name}
-                  </option>
-                ))}
+                {categoriesQuery.data?.items
+                  .filter((category) => category.isActive)
+                  .map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.code} — {category.name}
+                    </option>
+                  ))}
               </select>
               {categoriesQuery.data && (
                 <div className="asset-pagination" aria-label="Category choices">
@@ -474,6 +764,56 @@ export function AssetsPage() {
               <input id="asset-model" {...registerAsset("model")} />
               <label htmlFor="asset-serial">Serial number</label>
               <input id="asset-serial" {...registerAsset("serialNumber")} />
+              {serialNumber.trim().length > 0 && (
+                <div className="asset-serial-check">
+                  {serialMatchesQuery.isFetching ? (
+                    <p role="status">Checking accessible assets…</p>
+                  ) : serialMatchesQuery.isError ? (
+                    <p className="form-error" role="alert">
+                      Could not check for matching serial numbers. Registration
+                      is still available; verify the serial number manually.
+                    </p>
+                  ) : checkedSerialNumber === serialNumber.trim() &&
+                    serialMatchesQuery.data ? (
+                    serialMatchesQuery.data.total > 0 ? (
+                      <div role="status">
+                        <p>
+                          {serialMatchesQuery.data.total} existing asset
+                          {serialMatchesQuery.data.total === 1 ? "" : "s"} in
+                          your accessible locations{" "}
+                          {serialMatchesQuery.data.total === 1 ? "has" : "have"}{" "}
+                          this exact serial number. Serial numbers are not
+                          unique; review for a possible duplicate.
+                        </p>
+                        <ul>
+                          {serialMatchesQuery.data.items.map((asset) => (
+                            <li key={asset.id}>
+                              {asset.assetTag} — {asset.category.name} —{" "}
+                              {asset.location.code} ({asset.location.name})
+                            </li>
+                          ))}
+                        </ul>
+                        {serialMatchesQuery.data.total >
+                          serialMatchesQuery.data.items.length && (
+                          <p>
+                            Showing {serialMatchesQuery.data.items.length} of{" "}
+                            {serialMatchesQuery.data.total} matches.
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p role="status">
+                        No exact serial-number matches in your accessible
+                        locations.
+                      </p>
+                    )
+                  ) : (
+                    <p role="status">
+                      Checking for exact serial-number matches…
+                    </p>
+                  )}
+                </div>
+              )}
               <label htmlFor="asset-source">Source reference (optional)</label>
               <input id="asset-source" {...registerAsset("sourceReference")} />
               <label htmlFor="asset-notes">Notes (optional)</label>
@@ -499,8 +839,7 @@ export function AssetsPage() {
                 Search
                 <input
                   onChange={(event) => {
-                    setSearch(event.target.value);
-                    setPage(1);
+                    updateListSearch({ search: event.target.value, page: 1 });
                   }}
                   value={search}
                 />
@@ -509,8 +848,10 @@ export function AssetsPage() {
                 Location
                 <select
                   onChange={(event) => {
-                    setLocationId(event.target.value);
-                    setPage(1);
+                    updateListSearch({
+                      locationId: event.target.value,
+                      page: 1,
+                    });
                   }}
                   value={locationId}
                 >
@@ -526,8 +867,10 @@ export function AssetsPage() {
                 Category
                 <select
                   onChange={(event) => {
-                    setCategoryId(event.target.value);
-                    setPage(1);
+                    updateListSearch({
+                      categoryId: event.target.value,
+                      page: 1,
+                    });
                   }}
                   value={categoryId}
                 >
@@ -543,8 +886,11 @@ export function AssetsPage() {
                 Lifecycle
                 <select
                   onChange={(event) => {
-                    setLifecycle(event.target.value);
-                    setPage(1);
+                    updateListSearch({
+                      lifecycle: event.target
+                        .value as AssetListSearch["lifecycle"],
+                      page: 1,
+                    });
                   }}
                   value={lifecycle}
                 >
@@ -560,8 +906,11 @@ export function AssetsPage() {
                 Availability
                 <select
                   onChange={(event) => {
-                    setAvailability(event.target.value);
-                    setPage(1);
+                    updateListSearch({
+                      availability: event.target
+                        .value as AssetListSearch["availability"],
+                      page: 1,
+                    });
                   }}
                   value={availability}
                 >
@@ -577,8 +926,11 @@ export function AssetsPage() {
                 Condition
                 <select
                   onChange={(event) => {
-                    setCondition(event.target.value);
-                    setPage(1);
+                    updateListSearch({
+                      condition: event.target
+                        .value as AssetListSearch["condition"],
+                      page: 1,
+                    });
                   }}
                   value={condition}
                 >
@@ -590,17 +942,40 @@ export function AssetsPage() {
                   ))}
                 </select>
               </label>
+              <label>
+                Verification
+                <select
+                  onChange={(event) => {
+                    updateListSearch({
+                      verification: event.target
+                        .value as AssetListSearch["verification"],
+                      page: 1,
+                    });
+                  }}
+                  value={verification}
+                >
+                  <option value="">All verification states</option>
+                  {verificationOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
             <button
               className="button button-secondary"
               onClick={() => {
-                setSearch("");
-                setLocationId("");
-                setCategoryId("");
-                setLifecycle("");
-                setAvailability("");
-                setCondition("");
-                setPage(1);
+                updateListSearch({
+                  search: "",
+                  locationId: "",
+                  categoryId: "",
+                  lifecycle: "",
+                  availability: "",
+                  condition: "",
+                  verification: "",
+                  page: 1,
+                });
               }}
               type="button"
             >
@@ -630,6 +1005,7 @@ export function AssetsPage() {
                         <th>Lifecycle</th>
                         <th>Availability</th>
                         <th>Condition</th>
+                        <th>Verification</th>
                         <th>Details</th>
                       </tr>
                     </thead>
@@ -645,9 +1021,20 @@ export function AssetsPage() {
                           <td>{asset.lifecycle}</td>
                           <td>{asset.availability.replaceAll("_", " ")}</td>
                           <td>{asset.condition}</td>
+                          <td>{asset.verification.replaceAll("_", " ")}</td>
                           <td>
                             <Link
                               params={{ assetId: asset.id }}
+                              search={(current) => ({
+                                page: current.page ?? 1,
+                                search: current.search ?? "",
+                                locationId: current.locationId ?? "",
+                                categoryId: current.categoryId ?? "",
+                                lifecycle: current.lifecycle ?? "",
+                                availability: current.availability ?? "",
+                                condition: current.condition ?? "",
+                                verification: current.verification ?? "",
+                              })}
                               to="/assets/$assetId"
                             >
                               View
@@ -672,7 +1059,7 @@ export function AssetsPage() {
                   <button
                     className="button button-secondary"
                     disabled={page <= 1 || assetsQuery.isFetching}
-                    onClick={() => setPage((current) => current - 1)}
+                    onClick={() => updateListSearch({ page: page - 1 })}
                     type="button"
                   >
                     Previous
@@ -683,14 +1070,14 @@ export function AssetsPage() {
                       assetsQuery.isFetching ||
                       page * assetsQuery.data.pageSize >= assetsQuery.data.total
                     }
-                    onClick={() => setPage((current) => current + 1)}
+                    onClick={() => updateListSearch({ page: page + 1 })}
                     type="button"
                   >
                     Next
                   </button>
                 </div>
               </>
-            ) : (
+            ) : assetsQuery.isError ? null : (
               <p>No assets match the current filters.</p>
             )}
           </section>

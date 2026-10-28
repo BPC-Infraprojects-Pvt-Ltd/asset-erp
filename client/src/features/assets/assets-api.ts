@@ -20,7 +20,9 @@ export interface AssetCategory {
   code: string;
   name: string;
   isActive: boolean;
+  version: number;
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface PagedAssetCategories {
@@ -34,6 +36,7 @@ export interface AssetCategoryListQuery {
   page: number;
   pageSize: number;
   search?: string;
+  includeInactive?: boolean;
 }
 
 export interface Asset {
@@ -88,6 +91,8 @@ export interface AssetListQuery {
   lifecycle?: AssetLifecycle;
   availability?: AssetAvailability;
   condition?: AssetCondition;
+  verification?: AssetVerification;
+  serialNumberExact?: string;
 }
 
 export interface UpdateAssetProfileInput {
@@ -122,6 +127,37 @@ export const assetsApi = {
     const { data } = await apiClient.post<AssetCategory>(
       "/assets/categories",
       input,
+    );
+    return data;
+  },
+
+  async getCategory(categoryId: string): Promise<AssetCategory> {
+    const { data } = await apiClient.get<AssetCategory>(
+      `/assets/categories/${categoryId}`,
+    );
+    return data;
+  },
+
+  async updateCategory(
+    categoryId: string,
+    version: number,
+    input: CreateAssetCategoryInput,
+  ): Promise<AssetCategory> {
+    const { data } = await apiClient.put<AssetCategory>(
+      `/assets/categories/${categoryId}`,
+      input,
+      { headers: { "If-Match": `"${version}"` } },
+    );
+    return data;
+  },
+
+  async setCategoryActive(
+    categoryId: string,
+    isActive: boolean,
+  ): Promise<AssetCategory> {
+    const action = isActive ? "reactivate" : "deactivate";
+    const { data } = await apiClient.post<AssetCategory>(
+      `/assets/categories/${categoryId}/${action}`,
     );
     return data;
   },

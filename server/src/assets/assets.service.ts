@@ -21,6 +21,7 @@ import type { CreateAssetDto } from './dto/create-asset.dto.js';
 import type { ListAssetCategoriesQueryDto } from './dto/list-asset-categories-query.dto.js';
 import type { ListAssetsQueryDto } from './dto/list-assets-query.dto.js';
 import type { UpdateAssetProfileDto } from './dto/update-asset-profile.dto.js';
+import type { UpdateAssetCategoryDto } from './dto/update-asset-category.dto.js';
 
 const categorySelect = {
   id: true,
@@ -28,7 +29,9 @@ const categorySelect = {
   code: true,
   name: true,
   isActive: true,
+  version: true,
   createdAt: true,
+  updatedAt: true,
 } satisfies Prisma.AssetCategorySelect;
 
 const assetSelect = {
@@ -65,9 +68,10 @@ export class AssetsService {
     query: ListAssetCategoriesQueryDto,
   ) {
     this.requireCategoryReader(actor);
+    if (query.includeInactive) this.requireAdministrator(actor);
     const where: Prisma.AssetCategoryWhereInput = {
       organizationId: actor.organizationId,
-      isActive: true,
+      ...(query.includeInactive ? {} : { isActive: true }),
       ...(query.search
         ? {
             OR: [
@@ -88,6 +92,37 @@ export class AssetsService {
       this.prisma.assetCategory.count({ where }),
     ]);
     return { items, page: query.page, pageSize: query.pageSize, total };
+  }
+
+  async setCategoryActive(
+    actor: AuthenticatedActor,
+    categoryId: string,
+    isActive: boolean,
+  ) {
+    this.requireAdministrator(actor);
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.assetCategory.updateMany({
+        where: { id: categoryId, organizationId: actor.organizationId },
+        data: { isActive, version: { increment: 1 } },
+      });
+      if (updated.count !== 1) {
+        throw new NotFoundException('Asset category not found');
+      }
+      return tx.assetCategory.findFirstOrThrow({
+        where: { id: categoryId, organizationId: actor.organizationId },
+        select: categorySelect,
+      });
+    });
+  }
+
+  async getCategory(actor: AuthenticatedActor, categoryId: string) {
+    this.requireCategoryReader(actor);
+    const category = await this.prisma.assetCategory.findFirst({
+      where: { id: categoryId, organizationId: actor.organizationId },
+      select: categorySelect,
+    });
+    if (!category) throw new NotFoundException('Asset category not found');
+    return category;
   }
 
   async createCategory(actor: AuthenticatedActor, dto: CreateAssetCategoryDto) {
@@ -114,6 +149,56 @@ export class AssetsService {
     }
   }
 
+  async updateCategory(
+    actor: AuthenticatedActor,
+    categoryId: string,
+    version: number,
+    dto: UpdateAssetCategoryDto,
+  ) {
+    this.requireAdministrator(actor);
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.assetCategory.findFirst({
+        where: { id: categoryId, organizationId: actor.organizationId },
+        select: { id: true },
+      });
+      if (!current) throw new NotFoundException('Asset category not found');
+
+      try {
+        const updated = await tx.assetCategory.updateMany({
+          where: {
+            id: categoryId,
+            organizationId: actor.organizationId,
+            version,
+          },
+          data: {
+            code: dto.code,
+            name: dto.name,
+            version: { increment: 1 },
+          },
+        });
+        if (updated.count !== 1) {
+          throw new ConflictException(
+            'The asset category changed since it was loaded. Reload and review the latest category before saving again.',
+          );
+        }
+        return tx.assetCategory.findFirstOrThrow({
+          where: { id: categoryId, organizationId: actor.organizationId },
+          select: categorySelect,
+        });
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          throw new ConflictException(
+            'An asset category with this code already exists in the organization',
+          );
+        }
+        throw error;
+      }
+    });
+  }
+
   async list(actor: AuthenticatedActor, query: ListAssetsQueryDto) {
     this.requireAssetManager(actor);
     const accessibleLocationIds =
@@ -131,6 +216,10 @@ export class AssetsService {
       ...(query.lifecycle ? { lifecycle: query.lifecycle } : {}),
       ...(query.availability ? { availability: query.availability } : {}),
       ...(query.condition ? { condition: query.condition } : {}),
+      ...(query.verification ? { verification: query.verification } : {}),
+      ...(query.serialNumberExact
+        ? { serialNumber: query.serialNumberExact }
+        : {}),
       ...(query.search
         ? {
             OR: [
