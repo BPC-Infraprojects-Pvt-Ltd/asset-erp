@@ -10,7 +10,7 @@ for IT & Communication Asset Management.
 
 Read with:
 
-- `../agents.md`
+- `../AGENTS.md`
 - `../requirement.md`
 - `./requirement.md`
 - `../client/design.md`
@@ -207,6 +207,12 @@ Apply these rules to:
 - Reports.
 - Worker jobs.
 - Integration endpoints.
+
+Location authorization resolves a user's granted Locations through the
+parent/child tree and includes Stores attached to each granted subtree.
+Validate every user, grantor, Location, and Store reference within the
+authenticated organization. Preserve revoked Location-scope grants as
+approved history.
 
 Role names and token claims alone are insufficient.
 

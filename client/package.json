@@ -1,0 +1,44 @@
+{
+  "name": "asset-erp-client",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "predev": "pnpm run routes:generate",
+    "prebuild": "pnpm run routes:generate",
+    "routes:generate": "tsr generate",
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "preview": "vite preview",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"vite.config.ts\" \"index.html\""
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.0.0",
+    "@tanstack/react-router": "^1.0.0",
+    "@tanstack/react-table": "^8.0.0",
+    "axios": "^1.0.0",
+    "react-hook-form": "^7.0.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zod": "^4.0.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@tanstack/router-plugin": "^1.0.0",
+    "@tanstack/router-cli": "^1.0.0",
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "oxlint": "^1.89.0",
+    "prettier": "^3.0.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "~7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^4.1.2"
+  }
+}

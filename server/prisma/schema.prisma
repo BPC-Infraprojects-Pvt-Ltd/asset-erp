@@ -1,0 +1,219 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  ADMINISTRATOR
+  ASSET_MANAGER
+  TECHNICIAN
+  SOFTWARE_LICENSE_MANAGER
+  PROCUREMENT_FINANCE
+  MANAGER_APPROVER
+  EMPLOYEE
+  AUDITOR
+}
+
+enum AssetLifecycle {
+  RECEIVED
+  ACTIVE
+  RETIRED
+  DISPOSED
+}
+
+enum AssetAvailability {
+  AVAILABLE
+  RESERVED
+  ASSIGNED
+  IN_TRANSIT
+  IN_REPAIR
+  QUARANTINED
+  UNAVAILABLE
+}
+
+enum AssetCondition {
+  NEW
+  GOOD
+  FAIR
+  DAMAGED
+  NONFUNCTIONAL
+  UNKNOWN
+}
+
+enum AssetVerification {
+  VERIFIED
+  MISSING
+  DISPUTED
+  NOT_CHECKED
+}
+
+model Organization {
+  id              String           @id @default(uuid()) @db.Uuid
+  name            String           @db.VarChar(150)
+  isActive        Boolean          @default(true) @map("is_active")
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  users           User[]
+  sessions        RefreshSession[]
+  locations       Location[]
+  stores          Store[]
+  assetCategories AssetCategory[]
+  assets          Asset[]
+
+  @@map("organizations")
+}
+
+model User {
+  id                    String              @id @default(uuid()) @db.Uuid
+  organizationId        String              @map("organization_id") @db.Uuid
+  email                 String              @db.VarChar(254)
+  displayName           String              @map("display_name") @db.VarChar(160)
+  passwordHash          String              @map("password_hash") @db.VarChar(100)
+  role                  UserRole            @default(EMPLOYEE)
+  isActive              Boolean             @default(true) @map("is_active")
+  mustChangePassword    Boolean             @default(false) @map("must_change_password")
+  version               Int                 @default(1)
+  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  organization          Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  sessions              RefreshSession[]
+  locationScopes        UserLocationScope[] @relation("UserLocationScopeTarget")
+  grantedLocationScopes UserLocationScope[] @relation("UserLocationScopeGrantor")
+  revokedLocationScopes UserLocationScope[] @relation("UserLocationScopeRevoker")
+  registeredAssets      Asset[]
+
+  @@unique([organizationId, email], map: "users_organization_id_email_key")
+  @@unique([organizationId, id], map: "users_organization_id_id_key")
+  @@index([organizationId, isActive], map: "users_organization_id_is_active_idx")
+  @@map("users")
+}
+
+model Location {
+  id               String              @id @default(uuid()) @db.Uuid
+  organizationId   String              @map("organization_id") @db.Uuid
+  parentLocationId String?             @map("parent_location_id") @db.Uuid
+  code             String              @db.VarChar(60)
+  name             String              @db.VarChar(150)
+  isActive         Boolean             @default(true) @map("is_active")
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  organization     Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  parent           Location?           @relation("LocationTree", fields: [organizationId, parentLocationId], references: [organizationId, id], onDelete: Restrict)
+  children         Location[]          @relation("LocationTree")
+  stores           Store[]
+  scopeGrants      UserLocationScope[]
+  assets           Asset[]
+
+  @@unique([organizationId, id], map: "locations_organization_id_id_key")
+  @@unique([organizationId, code], map: "locations_organization_id_code_key")
+  @@index([organizationId, parentLocationId, isActive], map: "locations_org_parent_active_idx")
+  @@map("locations")
+}
+
+model Store {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  locationId     String       @map("location_id") @db.Uuid
+  code           String       @db.VarChar(60)
+  name           String       @db.VarChar(150)
+  isActive       Boolean      @default(true) @map("is_active")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  location       Location     @relation(fields: [organizationId, locationId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, id], map: "stores_organization_id_id_key")
+  @@unique([organizationId, code], map: "stores_organization_id_code_key")
+  @@index([organizationId, locationId, isActive], map: "stores_org_location_active_idx")
+  @@map("stores")
+}
+
+model UserLocationScope {
+  id               String    @id @default(uuid()) @db.Uuid
+  organizationId   String    @map("organization_id") @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  locationId       String    @map("location_id") @db.Uuid
+  assignedByUserId String    @map("assigned_by_user_id") @db.Uuid
+  revokedByUserId  String?   @map("revoked_by_user_id") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(3)
+  user             User      @relation("UserLocationScopeTarget", fields: [organizationId, userId], references: [organizationId, id], onDelete: Restrict)
+  location         Location  @relation(fields: [organizationId, locationId], references: [organizationId, id], onDelete: Restrict)
+  assignedBy       User      @relation("UserLocationScopeGrantor", fields: [organizationId, assignedByUserId], references: [organizationId, id], onDelete: Restrict)
+  revokedBy        User?     @relation("UserLocationScopeRevoker", fields: [organizationId, revokedByUserId], references: [organizationId, id], onDelete: Restrict)
+
+  @@index([organizationId, userId, revokedAt], map: "user_location_scopes_org_user_revoked_idx")
+  @@index([organizationId, locationId, revokedAt], map: "user_location_scopes_org_location_revoked_idx")
+  @@map("user_location_scopes")
+}
+
+model RefreshSession {
+  id             String       @id @default(uuid()) @db.Uuid
+  familyId       String       @map("family_id") @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  userId         String       @map("user_id") @db.Uuid
+  tokenHash      String       @unique(map: "refresh_sessions_token_hash_key") @map("token_hash") @db.Char(64)
+  expiresAt      DateTime     @map("expires_at") @db.Timestamptz(3)
+  rotatedAt      DateTime?    @map("rotated_at") @db.Timestamptz(3)
+  revokedAt      DateTime?    @map("revoked_at") @db.Timestamptz(3)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user           User         @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Restrict)
+
+  @@index([organizationId, userId, familyId], map: "refresh_sessions_org_user_family_idx")
+  @@index([familyId, revokedAt], map: "refresh_sessions_family_revoked_idx")
+  @@map("refresh_sessions")
+}
+
+model AssetCategory {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  code           String       @db.VarChar(60)
+  name           String       @db.VarChar(150)
+  isActive       Boolean      @default(true) @map("is_active")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  assets         Asset[]
+
+  @@unique([organizationId, id], map: "asset_categories_organization_id_id_key")
+  @@unique([organizationId, code], map: "asset_categories_organization_id_code_key")
+  @@index([organizationId, isActive, code], map: "asset_categories_org_active_code_idx")
+  @@map("asset_categories")
+}
+
+model Asset {
+  id              String            @id @default(uuid()) @db.Uuid
+  organizationId  String            @map("organization_id") @db.Uuid
+  assetTag        String            @map("asset_tag") @db.VarChar(100)
+  categoryId      String            @map("category_id") @db.Uuid
+  manufacturer    String?           @db.VarChar(150)
+  model           String?           @db.VarChar(150)
+  serialNumber    String?           @map("serial_number") @db.VarChar(150)
+  locationId      String            @map("location_id") @db.Uuid
+  lifecycle       AssetLifecycle    @default(RECEIVED)
+  availability    AssetAvailability
+  condition       AssetCondition
+  verification    AssetVerification @default(NOT_CHECKED)
+  sourceReference String?           @map("source_reference") @db.VarChar(150)
+  notes           String?           @db.VarChar(2000)
+  version         Int               @default(1)
+  createdByUserId String            @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  organization    Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  category        AssetCategory     @relation(fields: [organizationId, categoryId], references: [organizationId, id], onDelete: Restrict)
+  location        Location          @relation(fields: [organizationId, locationId], references: [organizationId, id], onDelete: Restrict)
+  createdBy       User              @relation(fields: [organizationId, createdByUserId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, id], map: "assets_organization_id_id_key")
+  @@unique([organizationId, assetTag], map: "assets_organization_id_asset_tag_key")
+  @@index([organizationId, createdAt, id], map: "assets_org_created_at_id_idx")
+  @@index([organizationId, locationId, createdAt], map: "assets_org_location_created_idx")
+  @@index([organizationId, categoryId, createdAt], map: "assets_org_category_created_idx")
+  @@index([organizationId, lifecycle, availability], map: "assets_org_lifecycle_availability_idx")
+  @@map("assets")
+}

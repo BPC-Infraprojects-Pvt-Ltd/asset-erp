@@ -185,6 +185,24 @@ These are proposed responsibilities, not approval of a replacement
 role model. Preserve the template's current role-assignment cardinality
 until an approved change is defined.
 
+Recorded implementation decision (2026-10-27): use these eight roles as the
+initial role catalog, with one role per user. Administrators provision users;
+the first organization and Administrator are created through a one-time
+interactive bootstrap command. Preserve self-access and last-active-admin
+protections. This approves role identities and account provisioning only;
+the role-to-capability and restricted-field rules in
+`authorization-matrix.md` are approved as the baseline. The location
+hierarchy is approved as Organization → parent/child Locations → Stores
+attached to a Location, without separate room, rack, or remote-custody
+hierarchy types. A grant at a Location includes that Location, all descendant
+Locations, and Stores attached anywhere in that subtree. The listed
+workflow-specific authority decisions remain unresolved.
+
+Recorded security-data decision (2026-10-27): retain user Location grant and
+revocation history indefinitely for accountability. This decision applies only
+to user Location scope assignments and does not establish retention for other
+audit or business records.
+
 ### ORG-05 Restricted data
 
 Costs, employee details, contract terms, license secrets, and sensitive
@@ -784,7 +802,20 @@ Hardware must distinguish:
 - Condition: new, good, fair, damaged, nonfunctional, unknown.
 - Verification: verified, missing, disputed, not_checked.
 
-Approve the legal combinations before implementation.
+Approved implementation decision (2026-10-27): `received` permits
+`available`, `quarantined`, or `unavailable`; `active` permits every
+availability value, with `reserved`, `assigned`, `in_transit`, and
+`in_repair` requiring their corresponding open workflow record; `retired` and
+`disposed` permit only `unavailable`. A `nonfunctional` condition permits only
+`in_repair`, `quarantined`, or `unavailable`. Condition and verification
+otherwise remain independent. Missing or disputed verification never changes
+lifecycle, location, or custody. Retired/disposed states are not reversible by
+ordinary updates.
+
+Approved implementation decision: Asset Managers may directly register
+individually tracked equipment as `received`, without creating a receipt
+record. Direct registration is not a posted receipt and does not imply
+purchasing or receiving evidence.
 
 ### 24.2 Required workflow specifications
 

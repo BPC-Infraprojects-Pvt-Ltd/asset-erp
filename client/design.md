@@ -10,7 +10,7 @@ This document adapts the supplied frontend template, originally named
 
 Read with:
 
-- `../agents.md`
+- `../AGENTS.md`
 - `../requirement.md`
 - `./requirement.md`
 - `../server/design.md`

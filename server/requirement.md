@@ -108,6 +108,11 @@ Never accept organization identity as authority from request bodies.
 Finalize cardinalities and ownership before migrations.
 Reuse existing entities only when their semantics match.
 
+Location is a parent/child tree; each Store belongs to one Location.
+UserLocationScope grants are organization-scoped. A grant includes the chosen
+Location, its descendants, and every Store in that subtree. Retain grant and
+revocation history indefinitely, as approved for these scope assignments.
+
 ### 3.3 Required relational controls
 
 - Organization-scoped asset-tag uniqueness.
