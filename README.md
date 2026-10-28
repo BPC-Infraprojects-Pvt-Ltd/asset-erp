@@ -51,6 +51,30 @@ assigned Location subtrees. Direct asset registration does not create a
 receiving record; the API does not yet support assignments, transfers, repairs,
 or lifecycle/availability transitions.
 
+Asset Managers may edit descriptive metadata within the same organization and
+assigned Location scope using `PUT /api/v1/assets/:assetId/profile`. This is a
+complete profile edit: all five string fields (`manufacturer`, `model`,
+`serialNumber`, `sourceReference`, `notes`) are required. Values are trimmed;
+empty strings clear stored values to null. The first four fields are limited
+to 150 characters and notes to 2000. Other fields are rejected, including
+organization, tag, category, location, state, custody, and body versions.
+There is no generic asset PATCH endpoint.
+
+The update requires `If-Match: "1"` (the quoted positive integer `version`
+from the asset read response). Missing, wildcard, weak, multiple, or malformed
+versions return 400; inaccessible assets return 404; stale versions return 409.
+The conditional write includes organization, assigned Locations, and version,
+and increments version atomically. The returned body is the updated asset.
+No database schema or migration changes are needed for profile editing.
+
+The detail form keeps drafts and their original versions on rejected updates
+and background refetches. On conflict, load the latest profile for comparison
+without losing input; explicitly discard the draft to edit the reviewed
+version. Network failures and server errors with an unknown outcome require
+reviewing the server profile before retrying.
+Business audit infrastructure remains a gap; profile editing adds no audit
+or outbox claims and does not enable any receiving or state workflow.
+
 The asset-register migration is additive and has not been applied by this
 development task. Apply reviewed migrations only to an approved PostgreSQL
 database. Public registration, receiving, custody, movements, maintenance,

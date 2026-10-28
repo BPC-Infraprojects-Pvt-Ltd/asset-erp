@@ -90,6 +90,14 @@ export interface AssetListQuery {
   condition?: AssetCondition;
 }
 
+export interface UpdateAssetProfileInput {
+  manufacturer: string;
+  model: string;
+  serialNumber: string;
+  sourceReference: string;
+  notes: string;
+}
+
 export interface PagedAssets {
   items: Asset[];
   page: number;
@@ -132,6 +140,19 @@ export const assetsApi = {
 
   async create(input: CreateAssetInput): Promise<Asset> {
     const { data } = await apiClient.post<Asset>("/assets", input);
+    return data;
+  },
+
+  async updateProfile(
+    assetId: string,
+    version: number,
+    input: UpdateAssetProfileInput,
+  ): Promise<Asset> {
+    const { data } = await apiClient.put<Asset>(
+      `/assets/${assetId}/profile`,
+      input,
+      { headers: { "If-Match": `"${version}"` } },
+    );
     return data;
   },
 };

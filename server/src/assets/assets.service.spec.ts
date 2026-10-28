@@ -37,10 +37,13 @@ describe('AssetsService', () => {
       findFirst: jest.fn(),
       count: jest.fn(),
       create: jest.fn(),
+      updateMany: jest.fn(),
+      findFirstOrThrow: jest.fn(),
     },
     location: {
       findFirst: jest.fn(),
     },
+    $transaction: jest.fn(),
   };
   const locations = {
     getAccessibleLocationIds: jest.fn(),
@@ -48,8 +51,11 @@ describe('AssetsService', () => {
   let service: AssetsService;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
     locations.getAccessibleLocationIds.mockResolvedValue([locationId]);
+    prisma.$transaction.mockImplementation(async (callback) =>
+      callback(prisma),
+    );
     service = new AssetsService(
       prisma as unknown as PrismaService,
       locations as unknown as LocationsService,
@@ -237,5 +243,103 @@ describe('AssetsService', () => {
       ),
     ).rejects.toThrow('Asset Manager access is required');
     expect(locations.getAccessibleLocationIds).not.toHaveBeenCalled();
+  });
+
+  const profile = {
+    manufacturer: 'Manufacturer',
+    model: 'Model',
+    serialNumber: '000123',
+    sourceReference: '',
+    notes: 'Revised description',
+  };
+
+  it('conditionally updates only descriptive fields within organization and location scope', async () => {
+    prisma.asset.findFirst.mockResolvedValue({ id: assetId });
+    prisma.asset.updateMany.mockResolvedValue({ count: 1 });
+    const updated = { id: assetId, ...profile, version: 3 };
+    prisma.asset.findFirstOrThrow.mockResolvedValue(updated);
+
+    await expect(
+      service.updateProfile(assetManager, assetId, 2, profile),
+    ).resolves.toEqual(updated);
+    expect(prisma.asset.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: assetId,
+        organizationId,
+        locationId: { in: [locationId] },
+        version: 2,
+      },
+      data: { ...profile, sourceReference: null, version: { increment: 1 } },
+    });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.asset.findFirstOrThrow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: assetId,
+          organizationId,
+          locationId: { in: [locationId] },
+        },
+      }),
+    );
+  });
+
+  it('returns 409 for a conditional write lost to a competing version without reading a success result', async () => {
+    prisma.asset.findFirst.mockResolvedValue({ id: assetId });
+    prisma.asset.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.updateProfile(assetManager, assetId, 2, profile),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(prisma.asset.updateMany).toHaveBeenCalledTimes(1);
+    expect(prisma.asset.findFirstOrThrow).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['another organization', [locationId]],
+    ['an unassigned location', []],
+  ])(
+    'does not disclose or update an asset in %s',
+    async (_label, accessibleLocationIds) => {
+      locations.getAccessibleLocationIds.mockResolvedValue(
+        accessibleLocationIds,
+      );
+      prisma.asset.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updateProfile(assetManager, assetId, 1, profile),
+      ).rejects.toMatchObject({ status: 404 });
+      expect(prisma.asset.findFirst).toHaveBeenCalledWith({
+        where: {
+          id: assetId,
+          organizationId,
+          locationId: { in: accessibleLocationIds },
+        },
+        select: { id: true },
+      });
+      expect(prisma.asset.updateMany).not.toHaveBeenCalled();
+    },
+  );
+
+  it('denies profile edits before scope lookup to roles without asset management access', async () => {
+    await expect(
+      service.updateProfile(
+        { ...assetManager, role: UserRole.ADMINISTRATOR },
+        assetId,
+        1,
+        profile,
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(locations.getAccessibleLocationIds).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('propagates a transaction failure instead of returning a successful update', async () => {
+    prisma.asset.findFirst.mockResolvedValue({ id: assetId });
+    prisma.asset.updateMany.mockResolvedValue({ count: 1 });
+    prisma.asset.findFirstOrThrow.mockRejectedValue(new Error('Read failed'));
+
+    await expect(
+      service.updateProfile(assetManager, assetId, 1, profile),
+    ).rejects.toThrow('Read failed');
   });
 });

@@ -20,6 +20,7 @@ import type { CreateAssetCategoryDto } from './dto/create-asset-category.dto.js'
 import type { CreateAssetDto } from './dto/create-asset.dto.js';
 import type { ListAssetCategoriesQueryDto } from './dto/list-asset-categories-query.dto.js';
 import type { ListAssetsQueryDto } from './dto/list-assets-query.dto.js';
+import type { UpdateAssetProfileDto } from './dto/update-asset-profile.dto.js';
 
 const categorySelect = {
   id: true,
@@ -177,6 +178,49 @@ export class AssetsService {
       throw new NotFoundException('Asset not found');
     }
     return asset;
+  }
+
+  async updateProfile(
+    actor: AuthenticatedActor,
+    assetId: string,
+    version: number,
+    dto: UpdateAssetProfileDto,
+  ) {
+    this.requireAssetManager(actor);
+    const accessibleLocationIds =
+      (await this.locations.getAccessibleLocationIds(actor)) ?? [];
+    const where = {
+      id: assetId,
+      organizationId: actor.organizationId,
+      locationId: { in: accessibleLocationIds },
+    };
+
+    return this.prisma.$transaction(async (tx) => {
+      const asset = await tx.asset.findFirst({
+        where,
+        select: { id: true },
+      });
+      if (!asset) {
+        throw new NotFoundException('Asset not found');
+      }
+      const updated = await tx.asset.updateMany({
+        where: { ...where, version },
+        data: {
+          manufacturer: dto.manufacturer || null,
+          model: dto.model || null,
+          serialNumber: dto.serialNumber || null,
+          sourceReference: dto.sourceReference || null,
+          notes: dto.notes || null,
+          version: { increment: 1 },
+        },
+      });
+      if (updated.count !== 1) {
+        throw new ConflictException(
+          'The asset changed since it was loaded. Reload and review the latest profile before saving again.',
+        );
+      }
+      return tx.asset.findFirstOrThrow({ where, select: assetSelect });
+    });
   }
 
   async create(actor: AuthenticatedActor, dto: CreateAssetDto) {

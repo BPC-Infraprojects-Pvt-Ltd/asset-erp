@@ -85,6 +85,21 @@ describe('AppController (e2e)', () => {
       .expect('Content-Type', /application\/problem\+json/);
   });
 
+  it('requires authentication to edit an asset descriptive profile', () => {
+    return request(app.getHttpServer())
+      .put('/api/v1/assets/8e626601-b894-4f2e-acac-85104a978eea/profile')
+      .set('If-Match', '"1"')
+      .send({
+        manufacturer: '',
+        model: '',
+        serialNumber: '',
+        sourceReference: '',
+        notes: '',
+      })
+      .expect(401)
+      .expect('Content-Type', /application\/problem\+json/);
+  });
+
   afterEach(async () => {
     await app.close();
   });
