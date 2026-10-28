@@ -175,7 +175,9 @@ model AssetCategory {
   code           String       @db.VarChar(60)
   name           String       @db.VarChar(150)
   isActive       Boolean      @default(true) @map("is_active")
+  version        Int          @default(1)
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   assets         Asset[]
 

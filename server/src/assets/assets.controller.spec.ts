@@ -20,6 +20,11 @@ describe('Asset profile HTTP contract (no database)', () => {
     organizationId: 'authenticated-org',
   };
   const updateProfile = jest.fn();
+  const listCategories = jest.fn();
+  const listAssets = jest.fn();
+  const getCategory = jest.fn();
+  const setCategoryActive = jest.fn();
+  const updateCategory = jest.fn();
   const profile = {
     manufacturer: ' Manufacturer ',
     model: '',
@@ -31,7 +36,19 @@ describe('Asset profile HTTP contract (no database)', () => {
   beforeAll(async () => {
     const module = await Test.createTestingModule({
       controllers: [AssetsController],
-      providers: [{ provide: AssetsService, useValue: { updateProfile } }],
+      providers: [
+        {
+          provide: AssetsService,
+          useValue: {
+            updateProfile,
+            listCategories,
+            list: listAssets,
+            getCategory,
+            setCategoryActive,
+            updateCategory,
+          },
+        },
+      ],
     })
       .overrideGuard(AccessTokenGuard)
       .useValue({
@@ -159,6 +176,160 @@ describe('Asset profile HTTP contract (no database)', () => {
       .send(profile)
       .expect(400);
     expect(updateProfile).not.toHaveBeenCalled();
+  });
+
+  it('passes category visibility filters to the scoped service', async () => {
+    listCategories.mockResolvedValue({
+      items: [],
+      page: 1,
+      pageSize: 20,
+      total: 0,
+    });
+    await request(app.getHttpServer())
+      .get('/api/v1/assets/categories?includeInactive=true')
+      .expect(200)
+      .expect({ items: [], page: 1, pageSize: 20, total: 0 });
+    expect(listCategories).toHaveBeenCalledWith(
+      actor,
+      expect.objectContaining({ includeInactive: true }),
+    );
+  });
+
+  it('normalizes and validates exact serial-number lookup filters', async () => {
+    listAssets.mockResolvedValue({
+      items: [],
+      page: 1,
+      pageSize: 5,
+      total: 0,
+    });
+
+    await request(app.getHttpServer())
+      .get('/api/v1/assets?serialNumberExact=%20000123%20&page=1&pageSize=5')
+      .expect(200)
+      .expect({ items: [], page: 1, pageSize: 5, total: 0 });
+
+    expect(listAssets).toHaveBeenCalledWith(
+      actor,
+      expect.objectContaining({
+        serialNumberExact: '000123',
+        page: 1,
+        pageSize: 5,
+      }),
+    );
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/assets?serialNumberExact=${'x'.repeat(151)}`)
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .get('/api/v1/assets?verification=MISSING')
+      .expect(200);
+    expect(listAssets).toHaveBeenLastCalledWith(
+      actor,
+      expect.objectContaining({ verification: 'MISSING' }),
+    );
+    await request(app.getHttpServer())
+      .get('/api/v1/assets?verification=UNKNOWN')
+      .expect(400);
+  });
+
+  it('routes category detail lookup through the authenticated service', async () => {
+    getCategory.mockResolvedValue({
+      id: '9c73dc96-27d7-4e8d-ae3b-0af4e9e9a1f2',
+      isActive: false,
+      version: 3,
+    });
+    await request(app.getHttpServer())
+      .get('/api/v1/assets/categories/9c73dc96-27d7-4e8d-ae3b-0af4e9e9a1f2')
+      .expect(200)
+      .expect({
+        id: '9c73dc96-27d7-4e8d-ae3b-0af4e9e9a1f2',
+        isActive: false,
+        version: 3,
+      });
+    expect(getCategory).toHaveBeenCalledWith(
+      actor,
+      '9c73dc96-27d7-4e8d-ae3b-0af4e9e9a1f2',
+    );
+  });
+
+  it('rejects malformed includeInactive values', async () => {
+    await request(app.getHttpServer())
+      .get('/api/v1/assets/categories?includeInactive=maybe')
+      .expect(400);
+    expect(listCategories).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['deactivate', false],
+    ['reactivate', true],
+  ] as const)(
+    'routes category %s to the explicit lifecycle command',
+    async (action, isActive) => {
+      setCategoryActive.mockResolvedValue({
+        id: '9c73dc96-27d7-4e8d-ae3b-0af4e9e9a1f2',
+        isActive,
+      });
+      await request(app.getHttpServer())
+        .post(
+          `/api/v1/assets/categories/9c73dc96-27d7-4e8d-ae3b-0af4e9e9a1f2/${action}`,
+        )
+        .expect(200)
+        .expect({ id: '9c73dc96-27d7-4e8d-ae3b-0af4e9e9a1f2', isActive });
+      expect(setCategoryActive).toHaveBeenCalledWith(
+        actor,
+        '9c73dc96-27d7-4e8d-ae3b-0af4e9e9a1f2',
+        isActive,
+      );
+    },
+  );
+
+  it('rejects malformed category identifiers before calling the service', async () => {
+    await request(app.getHttpServer())
+      .post('/api/v1/assets/categories/not-a-uuid/deactivate')
+      .expect(400);
+    expect(setCategoryActive).not.toHaveBeenCalled();
+  });
+
+  it('updates categories using the explicit version and normalized payload', async () => {
+    updateCategory.mockResolvedValue({
+      id: '9c73dc96-27d7-4e8d-ae3b-0af4e9e9a1f2',
+      code: 'LAPTOP',
+      name: 'Portable computer',
+      version: 3,
+    });
+
+    await request(app.getHttpServer())
+      .put('/api/v1/assets/categories/9c73dc96-27d7-4e8d-ae3b-0af4e9e9a1f2')
+      .set('If-Match', '"2"')
+      .send({ code: ' laptop ', name: ' Portable computer ' })
+      .expect(200)
+      .expect({
+        id: '9c73dc96-27d7-4e8d-ae3b-0af4e9e9a1f2',
+        code: 'LAPTOP',
+        name: 'Portable computer',
+        version: 3,
+      });
+
+    expect(updateCategory).toHaveBeenCalledWith(
+      actor,
+      '9c73dc96-27d7-4e8d-ae3b-0af4e9e9a1f2',
+      2,
+      { code: 'LAPTOP', name: 'Portable computer' },
+    );
+  });
+
+  it('requires a valid category version and complete update DTO', async () => {
+    await request(app.getHttpServer())
+      .put('/api/v1/assets/categories/9c73dc96-27d7-4e8d-ae3b-0af4e9e9a1f2')
+      .send({ code: 'LAPTOP', name: 'Laptop' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .put('/api/v1/assets/categories/9c73dc96-27d7-4e8d-ae3b-0af4e9e9a1f2')
+      .set('If-Match', '"1"')
+      .send({ code: 'LAPTOP' })
+      .expect(400);
+    expect(updateCategory).not.toHaveBeenCalled();
   });
 
   it('does not expose a generic asset patch endpoint', async () => {

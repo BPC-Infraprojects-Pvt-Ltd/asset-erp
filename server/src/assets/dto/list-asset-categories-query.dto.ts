@@ -1,6 +1,7 @@
 import { Transform, Type } from 'class-transformer';
 import {
   IsInt,
+  IsBoolean,
   IsOptional,
   IsString,
   Max,
@@ -27,4 +28,13 @@ export class ListAssetCategoriesQueryDto {
   @IsString()
   @MaxLength(100)
   search?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === 'true' || value === true) return true;
+    if (value === 'false' || value === false) return false;
+    return value;
+  })
+  @IsBoolean()
+  includeInactive = false;
 }

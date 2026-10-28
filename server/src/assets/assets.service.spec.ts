@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 import { UserRole } from '../generated/prisma/enums.js';
+import { Prisma } from '../generated/prisma/client.js';
 import type { AuthenticatedActor } from '../auth/auth.types.js';
 import { LocationsService } from '../locations/locations.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -10,6 +11,18 @@ const managerId = 'c0985b17-75bb-4a80-9763-35d673ec05f2';
 const locationId = '27ae8d6f-3848-4528-9f31-ec585d08e9b5';
 const categoryId = '9c73dc96-27d7-4e8d-ae3b-0af4e9e9a1f2';
 const assetId = '8e626601-b894-4f2e-acac-85104a978eea';
+const administrator = {
+  userId: managerId,
+  organizationId,
+  sessionId: 'session-id',
+  familyId: 'family-id',
+  email: 'admin@example.com',
+  displayName: 'Administrator',
+  organizationName: 'Example Organization',
+  role: UserRole.ADMINISTRATOR,
+  mustChangePassword: false,
+  version: 1,
+} satisfies AuthenticatedActor;
 
 describe('AssetsService', () => {
   const assetManager = {
@@ -31,6 +44,8 @@ describe('AssetsService', () => {
       count: jest.fn(),
       findFirst: jest.fn(),
       create: jest.fn(),
+      updateMany: jest.fn(),
+      findFirstOrThrow: jest.fn(),
     },
     asset: {
       findMany: jest.fn(),
@@ -70,7 +85,9 @@ describe('AssetsService', () => {
       page: 2,
       pageSize: 10,
       search: 'serial',
+      serialNumberExact: '000123',
       condition: 'GOOD',
+      verification: 'MISSING',
     });
 
     expect(result).toEqual({ items: [], page: 2, pageSize: 10, total: 0 });
@@ -80,6 +97,8 @@ describe('AssetsService', () => {
           organizationId,
           locationId: { in: [locationId] },
           condition: 'GOOD',
+          verification: 'MISSING',
+          serialNumber: '000123',
           OR: expect.arrayContaining([
             { serialNumber: { contains: 'serial', mode: 'insensitive' } },
           ]),
@@ -113,6 +132,159 @@ describe('AssetsService', () => {
         skip: 10,
         take: 10,
       }),
+    );
+  });
+
+  it('lets only Administrators include inactive categories', async () => {
+    await expect(
+      service.listCategories(assetManager, {
+        page: 1,
+        pageSize: 20,
+        includeInactive: true,
+      }),
+    ).rejects.toThrow('Administrator access is required');
+    expect(prisma.assetCategory.findMany).not.toHaveBeenCalled();
+  });
+
+  it('reads active or inactive category detail within the organization', async () => {
+    prisma.assetCategory.findFirst.mockResolvedValue({
+      id: categoryId,
+      isActive: false,
+      version: 4,
+    });
+
+    await expect(
+      service.getCategory(administrator, categoryId),
+    ).resolves.toMatchObject({ isActive: false, version: 4 });
+    expect(prisma.assetCategory.findFirst).toHaveBeenCalledWith({
+      where: { id: categoryId, organizationId },
+      select: expect.objectContaining({ version: true, isActive: true }),
+    });
+  });
+
+  it('does not disclose category detail outside the organization', async () => {
+    prisma.assetCategory.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.getCategory(administrator, categoryId),
+    ).rejects.toThrow('Asset category not found');
+  });
+
+  it('lists inactive categories only within the Administrator organization', async () => {
+    prisma.assetCategory.findMany.mockResolvedValue([]);
+    prisma.assetCategory.count.mockResolvedValue(0);
+
+    await service.listCategories(administrator, {
+      page: 1,
+      pageSize: 20,
+      includeInactive: true,
+    });
+
+    expect(prisma.assetCategory.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { organizationId },
+      }),
+    );
+  });
+
+  it('deactivates a category without deleting historical references', async () => {
+    prisma.assetCategory.updateMany.mockResolvedValue({ count: 1 });
+    prisma.assetCategory.findFirstOrThrow.mockResolvedValue({
+      id: categoryId,
+      isActive: false,
+    });
+
+    await expect(
+      service.setCategoryActive(administrator, categoryId, false),
+    ).resolves.toMatchObject({ id: categoryId, isActive: false });
+    expect(prisma.assetCategory.updateMany).toHaveBeenCalledWith({
+      where: { id: categoryId, organizationId },
+      data: { isActive: false, version: { increment: 1 } },
+    });
+  });
+
+  it('reactivates an existing category in the authenticated organization', async () => {
+    prisma.assetCategory.updateMany.mockResolvedValue({ count: 1 });
+    prisma.assetCategory.findFirstOrThrow.mockResolvedValue({
+      id: categoryId,
+      isActive: true,
+    });
+
+    await expect(
+      service.setCategoryActive(administrator, categoryId, true),
+    ).resolves.toMatchObject({ id: categoryId, isActive: true });
+    expect(prisma.assetCategory.updateMany).toHaveBeenCalledWith({
+      where: { id: categoryId, organizationId },
+      data: { isActive: true, version: { increment: 1 } },
+    });
+  });
+
+  it('does not disclose or update categories outside the organization', async () => {
+    prisma.assetCategory.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.setCategoryActive(administrator, categoryId, false),
+    ).rejects.toThrow('Asset category not found');
+    expect(prisma.assetCategory.findFirstOrThrow).not.toHaveBeenCalled();
+  });
+
+  it('updates categories with an organization-scoped optimistic version check', async () => {
+    prisma.assetCategory.findFirst.mockResolvedValue({ id: categoryId });
+    prisma.assetCategory.updateMany.mockResolvedValue({ count: 1 });
+    prisma.assetCategory.findFirstOrThrow.mockResolvedValue({
+      id: categoryId,
+      code: 'LAPTOP',
+      name: 'Portable computer',
+      version: 3,
+    });
+
+    await expect(
+      service.updateCategory(administrator, categoryId, 2, {
+        code: 'LAPTOP',
+        name: 'Portable computer',
+      }),
+    ).resolves.toMatchObject({ version: 3 });
+    expect(prisma.assetCategory.updateMany).toHaveBeenCalledWith({
+      where: { id: categoryId, organizationId, version: 2 },
+      data: {
+        code: 'LAPTOP',
+        name: 'Portable computer',
+        version: { increment: 1 },
+      },
+    });
+  });
+
+  it('rejects stale category versions without returning a successful update', async () => {
+    prisma.assetCategory.findFirst.mockResolvedValue({ id: categoryId });
+    prisma.assetCategory.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.updateCategory(administrator, categoryId, 1, {
+        code: 'LAPTOP',
+        name: 'Portable computer',
+      }),
+    ).rejects.toThrow('changed since it was loaded');
+    expect(prisma.assetCategory.findFirstOrThrow).not.toHaveBeenCalled();
+  });
+
+  it('rejects category code conflicts in the organization', async () => {
+    prisma.assetCategory.findFirst.mockResolvedValue({ id: categoryId });
+    const uniqueError = new Prisma.PrismaClientKnownRequestError(
+      'unique constraint',
+      {
+        code: 'P2002',
+        clientVersion: '7.10.1',
+      },
+    );
+    prisma.assetCategory.updateMany.mockRejectedValue(uniqueError);
+
+    await expect(
+      service.updateCategory(administrator, categoryId, 1, {
+        code: 'LAPTOP',
+        name: 'Laptop',
+      }),
+    ).rejects.toThrow(
+      'An asset category with this code already exists in the organization',
     );
   });
 
