@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -6,27 +6,33 @@ import { z } from "zod";
 import { authErrorMessage } from "../auth/auth-errors";
 import { protectedQueryKey, useAuthStore } from "../auth/auth-store";
 import { locationsApi } from "../locations/locations-api";
+import { canManageAssetRegister, canViewAssetRegister } from "./asset-access";
 import {
   assetsApi,
+  type AssetCriticality,
   type AssetAvailability,
   type AssetCondition,
   type AssetLifecycle,
   type AssetVerification,
-  type AssetCategory,
-  type CreateAssetCategoryInput,
   type CreateAssetInput,
 } from "./assets-api";
-import type { AssetListSearch } from "./asset-list-search";
-import { Route } from "../../routes/assets";
 import {
-  assetCategoryEditError,
-  type AssetCategoryEditError,
-} from "./asset-category-edit-error";
+  assetIdFromScannedCode,
+  type AssetListSearch,
+} from "./asset-list-search";
+import { Route } from "../../routes/assets";
 
-const categorySchema = z.object({
-  code: z.string().trim().min(1).max(60),
-  name: z.string().trim().min(1).max(150),
-});
+type AssetRegistrationFormInput = Omit<CreateAssetInput, "criticality"> & {
+  criticality: AssetCriticality | "";
+};
+
+const optionalDate = z.string().refine((value) => {
+  if (!value) return true;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return (
+    !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+  );
+}, "Enter a valid calendar date.");
 
 const assetSchema = z
   .object({
@@ -42,11 +48,16 @@ const assetSchema = z
       "NONFUNCTIONAL",
       "UNKNOWN",
     ]),
+    criticality: z.enum(["", "LOW", "MEDIUM", "HIGH", "CRITICAL"]),
     manufacturer: z.string().trim().max(150),
     model: z.string().trim().max(150),
     serialNumber: z.string().trim().max(150),
     sourceReference: z.string().trim().max(150),
     notes: z.string().trim().max(2000),
+    specifications: z.record(z.string(), z.string()),
+    purchaseDate: optionalDate,
+    warrantyExpiresOn: optionalDate,
+    warrantyReference: z.string().trim().max(150),
   })
   .refine(
     (value) =>
@@ -93,10 +104,16 @@ const filterAvailabilityOptions: { value: AssetAvailability; label: string }[] =
   ];
 
 export function AssetsPage() {
+  const pathname = useLocation({ select: (location) => location.pathname });
+
+  return pathname === "/assets" ? <AssetRegisterPage /> : <Outlet />;
+}
+
+function AssetRegisterPage() {
   const queryClient = useQueryClient();
   const role = useAuthStore((state) => state.session?.user.role);
-  const isAdministrator = role === "ADMINISTRATOR";
-  const isAssetManager = role === "ASSET_MANAGER";
+  const canManageAssets = canManageAssetRegister(role);
+  const canViewAssets = canViewAssetRegister(role);
   const navigate = useNavigate({ from: "/assets" });
   const {
     page,
@@ -107,20 +124,11 @@ export function AssetsPage() {
     availability,
     condition,
     verification,
+    warrantyExpiresOnFrom,
+    warrantyExpiresOnTo,
   } = Route.useSearch();
   const [categoryPage, setCategoryPage] = useState(1);
   const [categorySearch, setCategorySearch] = useState("");
-  const [includeInactiveCategories, setIncludeInactiveCategories] =
-    useState(false);
-  const [editingCategory, setEditingCategory] = useState<AssetCategory | null>(
-    null,
-  );
-  const [categoryEditError, setCategoryEditError] =
-    useState<AssetCategoryEditError | null>(null);
-  const [latestCategory, setLatestCategory] = useState<AssetCategory | null>(
-    null,
-  );
-  const [reviewingCategory, setReviewingCategory] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   function updateListSearch(updates: Partial<AssetListSearch>) {
@@ -134,22 +142,20 @@ export function AssetsPage() {
       "asset-categories",
       categoryPage,
       categorySearch,
-      isAdministrator && includeInactiveCategories,
     ),
     queryFn: () =>
       assetsApi.listCategories({
         page: categoryPage,
         pageSize: 20,
         search: categorySearch || undefined,
-        includeInactive:
-          (isAdministrator && includeInactiveCategories) || undefined,
+        trackingMode: "INDIVIDUAL",
       }),
-    enabled: isAdministrator || isAssetManager,
+    enabled: canViewAssets,
   });
   const locationsQuery = useQuery({
     queryKey: protectedQueryKey("locations"),
     queryFn: locationsApi.list,
-    enabled: isAssetManager,
+    enabled: canViewAssets,
   });
   const assetsQuery = useQuery({
     queryKey: protectedQueryKey(
@@ -162,12 +168,17 @@ export function AssetsPage() {
       availability,
       condition,
       verification,
+      warrantyExpiresOnFrom,
+      warrantyExpiresOnTo,
     ),
     queryFn: () =>
       assetsApi.list({
         page,
         pageSize: 20,
-        search: search || undefined,
+        search: assetIdFromScannedCode(search)
+          ? undefined
+          : search || undefined,
+        assetIdExact: assetIdFromScannedCode(search),
         locationId: locationId || undefined,
         categoryId: categoryId || undefined,
         lifecycle: (lifecycle || undefined) as AssetLifecycle | undefined,
@@ -176,71 +187,10 @@ export function AssetsPage() {
         condition: (condition || undefined) as AssetCondition | undefined,
         verification: (verification || undefined) as
           AssetVerification | undefined,
+        warrantyExpiresOnFrom: warrantyExpiresOnFrom || undefined,
+        warrantyExpiresOnTo: warrantyExpiresOnTo || undefined,
       }),
-    enabled: isAssetManager,
-  });
-  const createCategory = useMutation({
-    mutationFn: assetsApi.createCategory,
-    onSuccess: async () => {
-      resetCategory();
-      setMessage(null);
-      await queryClient.invalidateQueries({
-        queryKey: protectedQueryKey("asset-categories"),
-      });
-    },
-    onError: (error) => setMessage(authErrorMessage(error)),
-  });
-  const updateCategoryStatus = useMutation({
-    mutationFn: ({
-      categoryId,
-      isActive,
-    }: {
-      categoryId: string;
-      isActive: boolean;
-    }) => assetsApi.setCategoryActive(categoryId, isActive),
-    onSuccess: async () => {
-      if (editingCategory) {
-        resetCategory({
-          code: editingCategory.code,
-          name: editingCategory.name,
-        });
-      } else {
-        resetCategory({ code: "", name: "" });
-      }
-      setMessage(null);
-      await queryClient.invalidateQueries({
-        queryKey: protectedQueryKey("asset-categories"),
-      });
-    },
-    onError: (error) => setMessage(authErrorMessage(error)),
-  });
-  const updateCategory = useMutation({
-    mutationFn: (input: CreateAssetCategoryInput) => {
-      if (!editingCategory)
-        throw new Error("No asset category is being edited.");
-      return assetsApi.updateCategory(
-        editingCategory.id,
-        editingCategory.version,
-        input,
-      );
-    },
-    onSuccess: async () => {
-      resetCategory();
-      setEditingCategory(null);
-      setCategoryEditError(null);
-      setLatestCategory(null);
-      setMessage(null);
-      await queryClient.invalidateQueries({
-        queryKey: protectedQueryKey("asset-categories"),
-      });
-    },
-    onError: (error) => {
-      const editError = assetCategoryEditError(error);
-      setCategoryEditError(
-        editError.conflict || editError.requiresReview ? editError : null,
-      );
-      setMessage(editError.message);
-    },
+    enabled: canViewAssets,
   });
   const createAsset = useMutation({
     mutationFn: assetsApi.create,
@@ -255,36 +205,37 @@ export function AssetsPage() {
     onError: (error) => setMessage(authErrorMessage(error)),
   });
   const {
-    register: registerCategory,
-    handleSubmit: handleCategorySubmit,
-    reset: resetCategory,
-    formState: { errors: categoryErrors },
-  } = useForm<CreateAssetCategoryInput>({
-    defaultValues: { code: "", name: "" },
-  });
-  const {
     register: registerAsset,
     handleSubmit: handleAssetSubmit,
     reset: resetAsset,
     setValue: setAssetValue,
     watch: watchAsset,
     formState: { errors: assetErrors },
-  } = useForm<CreateAssetInput>({
+  } = useForm<AssetRegistrationFormInput>({
     defaultValues: {
       assetTag: "",
       categoryId: "",
       locationId: "",
       availability: "AVAILABLE",
       condition: "GOOD",
+      criticality: "",
       manufacturer: "",
       model: "",
       serialNumber: "",
       sourceReference: "",
       notes: "",
+      specifications: {},
+      purchaseDate: "",
+      warrantyExpiresOn: "",
+      warrantyReference: "",
     },
   });
   const selectedAvailability = watchAsset("availability");
   const selectedCondition = watchAsset("condition");
+  const selectedAssetCategoryId = watchAsset("categoryId");
+  const selectedCategory = categoriesQuery.data?.items.find(
+    (category) => category.id === selectedAssetCategoryId,
+  );
   const serialNumber = watchAsset("serialNumber") ?? "";
   const [checkedSerialNumber, setCheckedSerialNumber] = useState("");
 
@@ -309,24 +260,27 @@ export function AssetsPage() {
         pageSize: 5,
         serialNumberExact: checkedSerialNumber,
       }),
-    enabled: isAssetManager && checkedSerialNumber.length > 0,
+    enabled: canManageAssets && checkedSerialNumber.length > 0,
   });
 
-  const submitCategory = handleCategorySubmit((values) => {
-    setMessage(null);
-    const parsed = categorySchema.safeParse(values);
-    if (!parsed.success) {
-      setMessage(parsed.error.issues[0]?.message ?? "Invalid category.");
-      return;
-    }
-    if (editingCategory) updateCategory.mutate(parsed.data);
-    else createCategory.mutate(parsed.data);
-  });
   const submitAsset = handleAssetSubmit((values) => {
     setMessage(null);
     const parsed = assetSchema.safeParse(values);
     if (!parsed.success) {
       setMessage(parsed.error.issues[0]?.message ?? "Invalid asset.");
+      return;
+    }
+    const category = categoriesQuery.data?.items.find(
+      (item) => item.id === parsed.data.categoryId,
+    );
+    const missingSpecification = category?.specificationFields.find(
+      (field) =>
+        field.required && !parsed.data.specifications[field.key]?.trim(),
+    );
+    if (missingSpecification) {
+      setMessage(
+        `${missingSpecification.label} is required for this category.`,
+      );
       return;
     }
     const {
@@ -335,6 +289,11 @@ export function AssetsPage() {
       serialNumber,
       sourceReference,
       notes,
+      specifications,
+      purchaseDate,
+      warrantyExpiresOn,
+      warrantyReference,
+      criticality,
       ...rest
     } = parsed.data;
     createAsset.mutate({
@@ -344,35 +303,13 @@ export function AssetsPage() {
       serialNumber: serialNumber || undefined,
       sourceReference: sourceReference || undefined,
       notes: notes || undefined,
+      specifications,
+      purchaseDate: purchaseDate || undefined,
+      warrantyExpiresOn: warrantyExpiresOn || undefined,
+      warrantyReference: warrantyReference || undefined,
+      criticality: criticality || undefined,
     });
   });
-
-  async function reviewLatestCategory() {
-    if (!editingCategory) return;
-    setReviewingCategory(true);
-    setLatestCategory(null);
-    setMessage(null);
-    try {
-      const latest = await assetsApi.getCategory(editingCategory.id);
-      setLatestCategory(latest);
-      setMessage(
-        latest.version === editingCategory.version
-          ? "Latest category loaded. Your draft is kept; review the server values below before continuing."
-          : "The category changed on the server. Your draft is kept; review the latest values below.",
-      );
-    } catch (error) {
-      const reviewError = assetCategoryEditError(error);
-      const message = `Could not verify the latest category. Your draft is kept. ${reviewError.message}`;
-      setCategoryEditError({
-        conflict: false,
-        requiresReview: true,
-        message,
-      });
-      setMessage(message);
-    } finally {
-      setReviewingCategory(false);
-    }
-  }
 
   return (
     <section>
@@ -380,9 +317,9 @@ export function AssetsPage() {
         <p className="eyebrow">Hardware</p>
         <h1>Asset register</h1>
         <p className="page-description">
-          Register individually tracked equipment within your assigned location
-          scope. New records are created as received; later lifecycle changes
-          require their own approved workflows.
+          {canManageAssets
+            ? "Register and manage individually tracked equipment within your assigned location scope. New records are created as received; later lifecycle changes require their own approved workflows."
+            : "Review individually tracked equipment across your organization. Asset Managers handle registration and editable asset workflows."}
         </p>
       </div>
 
@@ -392,445 +329,438 @@ export function AssetsPage() {
         </p>
       )}
 
-      {isAdministrator && (
-        <section className="user-admin-card" aria-labelledby="create-category">
-          <h2 id="create-category">Asset categories</h2>
-          <p>
-            Maintain the organization category list available to Asset Managers.
-          </p>
-          {categoriesQuery.isError && (
-            <p className="form-error" role="alert">
-              {authErrorMessage(categoriesQuery.error)}
-            </p>
-          )}
-          <form className="user-create-form" onSubmit={submitCategory}>
-            <label htmlFor="asset-category-code">Code</label>
-            <input
-              id="asset-category-code"
-              maxLength={60}
-              {...registerCategory("code")}
-            />
-            {categoryErrors.code && (
-              <span className="field-error">{categoryErrors.code.message}</span>
-            )}
-            <label htmlFor="asset-category-name">Name</label>
-            <input
-              id="asset-category-name"
-              maxLength={150}
-              {...registerCategory("name")}
-            />
-            {categoryErrors.name && (
-              <span className="field-error">{categoryErrors.name.message}</span>
-            )}
-            <button
-              className="button"
-              disabled={
-                createCategory.isPending ||
-                updateCategory.isPending ||
-                reviewingCategory ||
-                categoryEditError?.conflict ||
-                categoryEditError?.requiresReview
-              }
-              type="submit"
-            >
-              {updateCategory.isPending
-                ? "Saving…"
-                : editingCategory
-                  ? "Save category"
-                  : createCategory.isPending
-                    ? "Creating…"
-                    : "Create category"}
-            </button>
-            {editingCategory && (
-              <button
-                className="button button-secondary"
-                disabled={updateCategory.isPending || reviewingCategory}
-                onClick={() => {
-                  resetCategory({ code: "", name: "" });
-                  setEditingCategory(null);
-                  setCategoryEditError(null);
-                  setLatestCategory(null);
-                  setMessage(null);
-                }}
-                type="button"
-              >
-                Cancel edit
-              </button>
-            )}
-          </form>
-          {editingCategory &&
-            (categoryEditError?.conflict ||
-              categoryEditError?.requiresReview) && (
-              <div className="asset-category-conflict">
-                <button
-                  className="button button-secondary"
-                  disabled={reviewingCategory || updateCategory.isPending}
-                  onClick={() => void reviewLatestCategory()}
-                  type="button"
-                >
-                  {reviewingCategory
-                    ? "Loading latest…"
-                    : "Load latest for review (keep draft)"}
-                </button>
-                {latestCategory && (
-                  <section aria-label="Latest server category">
-                    <h3>Latest category — version {latestCategory.version}</h3>
-                    <dl>
-                      <div>
-                        <dt>Code</dt>
-                        <dd>{latestCategory.code}</dd>
-                      </div>
-                      <div>
-                        <dt>Name</dt>
-                        <dd>{latestCategory.name}</dd>
-                      </div>
-                      <div>
-                        <dt>Status</dt>
-                        <dd>
-                          {latestCategory.isActive ? "Active" : "Inactive"}
-                        </dd>
-                      </div>
-                    </dl>
-                    <button
-                      className="button"
-                      disabled={reviewingCategory || updateCategory.isPending}
-                      onClick={() => {
-                        resetCategory({
-                          code: latestCategory.code,
-                          name: latestCategory.name,
-                        });
-                        setEditingCategory(latestCategory);
-                        setCategoryEditError(null);
-                        setLatestCategory(null);
-                        setMessage(null);
-                      }}
-                      type="button"
-                    >
-                      Discard my draft and edit latest version
-                    </button>
-                  </section>
-                )}
-              </div>
-            )}
-          <label className="asset-category-search">
-            Search categories
-            <input
-              onChange={(event) => {
-                setCategorySearch(event.target.value);
-                setCategoryPage(1);
-              }}
-              value={categorySearch}
-            />
-          </label>
-          <label className="asset-category-inactive-toggle">
-            <input
-              checked={includeInactiveCategories}
-              onChange={(event) => {
-                setIncludeInactiveCategories(event.target.checked);
-                setCategoryPage(1);
-              }}
-              type="checkbox"
-            />
-            Show inactive categories
-          </label>
-          {categoriesQuery.data?.items.length ? (
-            <ul className="master-list">
-              {categoriesQuery.data.items.map((category) => (
-                <li key={category.id}>
-                  <div className="asset-category-row">
-                    <span>
-                      <strong>{category.code}</strong> — {category.name} (
-                      {category.isActive ? "Active" : "Inactive"})
-                    </span>
-                    <button
-                      className="button button-secondary"
-                      disabled={
-                        updateCategory.isPending ||
-                        createCategory.isPending ||
-                        updateCategoryStatus.isPending ||
-                        editingCategory !== null
-                      }
-                      onClick={() => {
-                        resetCategory({
-                          code: category.code,
-                          name: category.name,
-                        });
-                        setEditingCategory(category);
-                        setCategoryEditError(null);
-                        setLatestCategory(null);
-                        setMessage(null);
-                      }}
-                      type="button"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="button button-secondary"
-                      disabled={updateCategoryStatus.isPending}
-                      onClick={() =>
-                        updateCategoryStatus.mutate({
-                          categoryId: category.id,
-                          isActive: !category.isActive,
-                        })
-                      }
-                      type="button"
-                    >
-                      {category.isActive ? "Deactivate" : "Reactivate"}
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            !categoriesQuery.isPending && <p>No asset categories yet.</p>
-          )}
-          {categoriesQuery.data && (
-            <div className="asset-pagination" aria-label="Category pages">
-              <span>
-                {categoriesQuery.data.total} total · Page{" "}
-                {categoriesQuery.data.page} of{" "}
-                {Math.max(
-                  1,
-                  Math.ceil(
-                    categoriesQuery.data.total / categoriesQuery.data.pageSize,
-                  ),
-                )}
-              </span>
-              <button
-                className="button button-secondary"
-                disabled={categoryPage <= 1 || categoriesQuery.isFetching}
-                onClick={() => setCategoryPage((current) => current - 1)}
-                type="button"
-              >
-                Previous
-              </button>
-              <button
-                className="button button-secondary"
-                disabled={
-                  categoriesQuery.isFetching ||
-                  categoryPage * categoriesQuery.data.pageSize >=
-                    categoriesQuery.data.total
-                }
-                onClick={() => setCategoryPage((current) => current + 1)}
-                type="button"
-              >
-                Next
-              </button>
-            </div>
-          )}
-        </section>
-      )}
-
-      {isAssetManager && (
+      {canViewAssets && (
         <>
-          <section className="user-admin-card" aria-labelledby="register-asset">
-            <h2 id="register-asset">Register received asset</h2>
-            {categoriesQuery.isError && (
-              <p className="form-error" role="alert">
-                {authErrorMessage(categoriesQuery.error)}
-              </p>
-            )}
-            {locationsQuery.isError && (
-              <p className="form-error" role="alert">
-                {authErrorMessage(locationsQuery.error)}
-              </p>
-            )}
-            <form className="user-create-form" onSubmit={submitAsset}>
-              <label htmlFor="asset-tag">Asset tag</label>
-              <input id="asset-tag" {...registerAsset("assetTag")} />
-              {assetErrors.assetTag && (
-                <span className="field-error">
-                  {assetErrors.assetTag.message}
+          {canManageAssets && (
+            <section
+              className="user-admin-card modern-form-card"
+              aria-labelledby="register-asset"
+            >
+              <div className="form-card-heading">
+                <span className="form-step-mark" aria-hidden="true">
+                  02
                 </span>
-              )}
-              <label htmlFor="asset-category-search">Find category</label>
-              <input
-                id="asset-category-search"
-                onChange={(event) => {
-                  setCategorySearch(event.target.value);
-                  setCategoryPage(1);
-                  setAssetValue("categoryId", "");
-                }}
-                value={categorySearch}
-              />
-              <label htmlFor="asset-category">Category</label>
-              <select id="asset-category" {...registerAsset("categoryId")}>
-                <option value="">Select a category</option>
-                {categoriesQuery.data?.items
-                  .filter((category) => category.isActive)
-                  .map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.code} — {category.name}
-                    </option>
-                  ))}
-              </select>
-              {categoriesQuery.data && (
-                <div className="asset-pagination" aria-label="Category choices">
-                  <button
-                    className="button button-secondary"
-                    disabled={categoryPage <= 1 || categoriesQuery.isFetching}
-                    onClick={() => {
-                      setCategoryPage((current) => current - 1);
-                      setAssetValue("categoryId", "");
-                    }}
-                    type="button"
-                  >
-                    Previous categories
-                  </button>
-                  <button
-                    className="button button-secondary"
-                    disabled={
-                      categoriesQuery.isFetching ||
-                      categoryPage * categoriesQuery.data.pageSize >=
-                        categoriesQuery.data.total
-                    }
-                    onClick={() => {
-                      setCategoryPage((current) => current + 1);
-                      setAssetValue("categoryId", "");
-                    }}
-                    type="button"
-                  >
-                    More categories
-                  </button>
+                <div>
+                  <p className="eyebrow">Hardware intake</p>
+                  <h2 id="register-asset">Register received asset</h2>
+                  <p>
+                    Capture identifying details and the initial confirmed
+                    location. This registers an individually tracked asset as
+                    received.
+                  </p>
                 </div>
+              </div>
+              {categoriesQuery.isError && (
+                <p className="form-error" role="alert">
+                  {authErrorMessage(categoriesQuery.error)}
+                </p>
               )}
-              {assetErrors.categoryId && (
-                <span className="field-error">
-                  {assetErrors.categoryId.message}
-                </span>
+              {locationsQuery.isError && (
+                <p className="form-error" role="alert">
+                  {authErrorMessage(locationsQuery.error)}
+                </p>
               )}
-              <label htmlFor="asset-location">Confirmed location</label>
-              <select id="asset-location" {...registerAsset("locationId")}>
-                <option value="">Select a location</option>
-                {locationsQuery.data?.map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {location.code} — {location.name}
-                  </option>
-                ))}
-              </select>
-              {assetErrors.locationId && (
-                <span className="field-error">
-                  {assetErrors.locationId.message}
-                </span>
-              )}
-              <label htmlFor="asset-availability">Initial availability</label>
-              <select
-                id="asset-availability"
-                {...registerAsset("availability")}
+              <form
+                className="user-create-form modern-form asset-registration-form"
+                onSubmit={submitAsset}
               >
-                {availabilityOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              {assetErrors.availability && (
-                <span className="field-error">
-                  {assetErrors.availability.message}
-                </span>
-              )}
-              <label htmlFor="asset-condition">Condition</label>
-              <select id="asset-condition" {...registerAsset("condition")}>
-                {conditionOptions.map((option) => (
-                  <option
-                    key={option.value}
-                    disabled={
-                      option.value === "NONFUNCTIONAL" &&
-                      selectedAvailability === "AVAILABLE"
-                    }
-                    value={option.value}
-                  >
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              {assetErrors.condition && (
-                <span className="field-error">
-                  {assetErrors.condition.message}
-                </span>
-              )}
-              {selectedCondition === "NONFUNCTIONAL" &&
-                selectedAvailability === "AVAILABLE" && (
-                  <span className="field-error">
-                    Choose quarantined or unavailable for a nonfunctional asset.
-                  </span>
-                )}
-              <label htmlFor="asset-manufacturer">Manufacturer</label>
-              <input
-                id="asset-manufacturer"
-                {...registerAsset("manufacturer")}
-              />
-              <label htmlFor="asset-model">Model</label>
-              <input id="asset-model" {...registerAsset("model")} />
-              <label htmlFor="asset-serial">Serial number</label>
-              <input id="asset-serial" {...registerAsset("serialNumber")} />
-              {serialNumber.trim().length > 0 && (
-                <div className="asset-serial-check">
-                  {serialMatchesQuery.isFetching ? (
-                    <p role="status">Checking accessible assets…</p>
-                  ) : serialMatchesQuery.isError ? (
-                    <p className="form-error" role="alert">
-                      Could not check for matching serial numbers. Registration
-                      is still available; verify the serial number manually.
-                    </p>
-                  ) : checkedSerialNumber === serialNumber.trim() &&
-                    serialMatchesQuery.data ? (
-                    serialMatchesQuery.data.total > 0 ? (
-                      <div role="status">
-                        <p>
-                          {serialMatchesQuery.data.total} existing asset
-                          {serialMatchesQuery.data.total === 1 ? "" : "s"} in
-                          your accessible locations{" "}
-                          {serialMatchesQuery.data.total === 1 ? "has" : "have"}{" "}
-                          this exact serial number. Serial numbers are not
-                          unique; review for a possible duplicate.
-                        </p>
-                        <ul>
-                          {serialMatchesQuery.data.items.map((asset) => (
-                            <li key={asset.id}>
-                              {asset.assetTag} — {asset.category.name} —{" "}
-                              {asset.location.code} ({asset.location.name})
-                            </li>
-                          ))}
-                        </ul>
-                        {serialMatchesQuery.data.total >
-                          serialMatchesQuery.data.items.length && (
-                          <p>
-                            Showing {serialMatchesQuery.data.items.length} of{" "}
-                            {serialMatchesQuery.data.total} matches.
-                          </p>
-                        )}
+                <div className="modern-form-grid">
+                  <div className="modern-field">
+                    <label htmlFor="asset-tag">Asset tag</label>
+                    <input
+                      id="asset-tag"
+                      placeholder="e.g. IT-LAP-2048"
+                      {...registerAsset("assetTag")}
+                    />
+                    <small>
+                      Organization reference; keep leading zeros if used.
+                    </small>
+                    {assetErrors.assetTag && (
+                      <span className="field-error">
+                        {assetErrors.assetTag.message}
+                      </span>
+                    )}
+                  </div>
+                  <div className="modern-field">
+                    <label htmlFor="asset-category-search">Find category</label>
+                    <input
+                      id="asset-category-search"
+                      placeholder="Search category names"
+                      onChange={(event) => {
+                        setCategorySearch(event.target.value);
+                        setCategoryPage(1);
+                        setAssetValue("categoryId", "");
+                        setAssetValue("specifications", {});
+                      }}
+                      value={categorySearch}
+                    />
+                    <small>Search the organization’s active categories.</small>
+                  </div>
+                  <div className="modern-field">
+                    <label htmlFor="asset-category">Category</label>
+                    <select
+                      id="asset-category"
+                      {...registerAsset("categoryId", {
+                        onChange: () => setAssetValue("specifications", {}),
+                      })}
+                    >
+                      <option value="">Select a category</option>
+                      {categoriesQuery.data?.items
+                        .filter((category) => category.isActive)
+                        .map((category) => (
+                          <option key={category.id} value={category.id}>
+                            {category.code} — {category.name}
+                          </option>
+                        ))}
+                    </select>
+                    {assetErrors.categoryId && (
+                      <span className="field-error">
+                        {assetErrors.categoryId.message}
+                      </span>
+                    )}
+                    {categoriesQuery.data && (
+                      <div
+                        className="asset-pagination asset-choice-pagination"
+                        aria-label="Category choices"
+                      >
+                        <button
+                          className="button button-secondary"
+                          disabled={
+                            categoryPage <= 1 || categoriesQuery.isFetching
+                          }
+                          onClick={() => {
+                            setCategoryPage((current) => current - 1);
+                            setAssetValue("categoryId", "");
+                            setAssetValue("specifications", {});
+                          }}
+                          type="button"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          className="button button-secondary"
+                          disabled={
+                            categoriesQuery.isFetching ||
+                            categoryPage * categoriesQuery.data.pageSize >=
+                              categoriesQuery.data.total
+                          }
+                          onClick={() => {
+                            setCategoryPage((current) => current + 1);
+                            setAssetValue("categoryId", "");
+                            setAssetValue("specifications", {});
+                          }}
+                          type="button"
+                        >
+                          More
+                        </button>
                       </div>
-                    ) : (
-                      <p role="status">
-                        No exact serial-number matches in your accessible
-                        locations.
-                      </p>
-                    )
-                  ) : (
-                    <p role="status">
-                      Checking for exact serial-number matches…
-                    </p>
-                  )}
+                    )}
+                    <small>
+                      {categoriesQuery.data
+                        ? `${categoriesQuery.data.total} active category references`
+                        : "Categories are loaded from your organization."}
+                    </small>
+                  </div>
+                  <div className="modern-field modern-field-wide">
+                    <label htmlFor="asset-location">Confirmed location</label>
+                    <select
+                      id="asset-location"
+                      {...registerAsset("locationId")}
+                    >
+                      <option value="">Select a location</option>
+                      {locationsQuery.data?.map((location) => (
+                        <option key={location.id} value={location.id}>
+                          {location.code} — {location.name}
+                        </option>
+                      ))}
+                    </select>
+                    <small>
+                      Select the physical location where the received item is
+                      currently confirmed.
+                    </small>
+                    {assetErrors.locationId && (
+                      <span className="field-error">
+                        {assetErrors.locationId.message}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              )}
-              <label htmlFor="asset-source">Source reference (optional)</label>
-              <input id="asset-source" {...registerAsset("sourceReference")} />
-              <label htmlFor="asset-notes">Notes (optional)</label>
-              <textarea id="asset-notes" {...registerAsset("notes")} />
-              <button
-                className="button"
-                disabled={
-                  createAsset.isPending ||
-                  !categoriesQuery.data?.items.length ||
-                  !locationsQuery.data?.length
-                }
-                type="submit"
-              >
-                {createAsset.isPending ? "Registering…" : "Register asset"}
-              </button>
-            </form>
-          </section>
+
+                <div className="modern-form-section">
+                  <div className="modern-form-section-heading">
+                    <h3>Initial condition</h3>
+                    <p>These are separate state dimensions.</p>
+                  </div>
+                  <div className="modern-form-grid">
+                    <div className="modern-field">
+                      <label htmlFor="asset-availability">
+                        Initial availability
+                      </label>
+                      <select
+                        id="asset-availability"
+                        {...registerAsset("availability")}
+                      >
+                        {availabilityOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      {assetErrors.availability && (
+                        <span className="field-error">
+                          {assetErrors.availability.message}
+                        </span>
+                      )}
+                    </div>
+                    <div className="modern-field">
+                      <label htmlFor="asset-condition">Condition</label>
+                      <select
+                        id="asset-condition"
+                        {...registerAsset("condition")}
+                      >
+                        {conditionOptions.map((option) => (
+                          <option
+                            key={option.value}
+                            disabled={
+                              option.value === "NONFUNCTIONAL" &&
+                              selectedAvailability === "AVAILABLE"
+                            }
+                            value={option.value}
+                          >
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      {assetErrors.condition && (
+                        <span className="field-error">
+                          {assetErrors.condition.message}
+                        </span>
+                      )}
+                      {selectedCondition === "NONFUNCTIONAL" &&
+                        selectedAvailability === "AVAILABLE" && (
+                          <span className="field-error">
+                            Choose quarantined or unavailable for a
+                            nonfunctional asset.
+                          </span>
+                        )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="modern-form-section">
+                  <div className="modern-form-section-heading">
+                    <h3>Identification details</h3>
+                    <p>Optional manufacturer and serial information.</p>
+                  </div>
+                  <div className="modern-form-grid">
+                    <div className="modern-field">
+                      <label htmlFor="asset-manufacturer">Manufacturer</label>
+                      <input
+                        id="asset-manufacturer"
+                        placeholder="e.g. Northwind Devices"
+                        {...registerAsset("manufacturer")}
+                      />
+                    </div>
+                    <div className="modern-field">
+                      <label htmlFor="asset-model">Model</label>
+                      <input
+                        id="asset-model"
+                        placeholder="e.g. ThinkPad T14"
+                        {...registerAsset("model")}
+                      />
+                    </div>
+                    <div className="modern-field modern-field-wide">
+                      <label htmlFor="asset-serial">Serial number</label>
+                      <input
+                        id="asset-serial"
+                        placeholder="Enter the serial exactly as shown"
+                        {...registerAsset("serialNumber")}
+                      />
+                      <small>
+                        Serial numbers are preserved as text and may be shared
+                        by multiple records.
+                      </small>
+                      {serialNumber.trim().length > 0 && (
+                        <div className="asset-serial-check">
+                          {serialMatchesQuery.isFetching ? (
+                            <p role="status">Checking accessible assets…</p>
+                          ) : serialMatchesQuery.isError ? (
+                            <p className="form-error" role="alert">
+                              Could not check for matching serial numbers.
+                              Registration is still available; verify the serial
+                              number manually.
+                            </p>
+                          ) : checkedSerialNumber === serialNumber.trim() &&
+                            serialMatchesQuery.data ? (
+                            serialMatchesQuery.data.total > 0 ? (
+                              <div role="status">
+                                <p>
+                                  {serialMatchesQuery.data.total} existing asset
+                                  {serialMatchesQuery.data.total === 1
+                                    ? ""
+                                    : "s"}{" "}
+                                  in your accessible locations{" "}
+                                  {serialMatchesQuery.data.total === 1
+                                    ? "has"
+                                    : "have"}{" "}
+                                  this exact serial number. Serial numbers are
+                                  not unique; review for a possible duplicate.
+                                </p>
+                                <ul>
+                                  {serialMatchesQuery.data.items.map(
+                                    (asset) => (
+                                      <li key={asset.id}>
+                                        {asset.assetTag} — {asset.category.name}{" "}
+                                        — {asset.location.code} (
+                                        {asset.location.name})
+                                      </li>
+                                    ),
+                                  )}
+                                </ul>
+                                {serialMatchesQuery.data.total >
+                                  serialMatchesQuery.data.items.length && (
+                                  <p>
+                                    Showing{" "}
+                                    {serialMatchesQuery.data.items.length} of{" "}
+                                    {serialMatchesQuery.data.total} matches.
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              <p role="status">
+                                No exact serial-number matches in your
+                                accessible locations.
+                              </p>
+                            )
+                          ) : (
+                            <p role="status">
+                              Checking for exact serial-number matches…
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                {selectedCategory?.specificationFields.length ? (
+                  <div className="modern-form-section">
+                    <div className="modern-form-section-heading">
+                      <h3>Category specifications</h3>
+                      <p>
+                        Text values required by the selected hardware category.
+                      </p>
+                    </div>
+                    <div className="modern-form-grid">
+                      {selectedCategory.specificationFields.map((field) => (
+                        <div className="modern-field" key={field.key}>
+                          <label htmlFor={`asset-specification-${field.key}`}>
+                            {field.label}
+                            {field.required && <span>Required</span>}
+                          </label>
+                          <input
+                            id={`asset-specification-${field.key}`}
+                            maxLength={2000}
+                            {...registerAsset(
+                              `specifications.${field.key}` as const,
+                            )}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                <div className="modern-form-grid">
+                  <div className="modern-field">
+                    <label htmlFor="asset-criticality">
+                      Criticality <span>Optional</span>
+                    </label>
+                    <select
+                      id="asset-criticality"
+                      {...registerAsset("criticality")}
+                    >
+                      <option value="">Not set</option>
+                      <option value="LOW">Low</option>
+                      <option value="MEDIUM">Medium</option>
+                      <option value="HIGH">High</option>
+                      <option value="CRITICAL">Critical</option>
+                    </select>
+                  </div>
+                  <div className="modern-field">
+                    <label htmlFor="asset-source">
+                      Source reference <span>Optional</span>
+                    </label>
+                    <input
+                      id="asset-source"
+                      placeholder="Purchase or receiving reference"
+                      {...registerAsset("sourceReference")}
+                    />
+                  </div>
+                  <div className="modern-field">
+                    <label htmlFor="asset-notes">
+                      Notes <span>Optional</span>
+                    </label>
+                    <textarea
+                      id="asset-notes"
+                      placeholder="Additional descriptive notes"
+                      {...registerAsset("notes")}
+                    />
+                  </div>
+                </div>
+                <div className="modern-form-grid">
+                  <div className="modern-field">
+                    <label htmlFor="asset-purchase-date">
+                      Purchase date <span>Optional</span>
+                    </label>
+                    <input
+                      id="asset-purchase-date"
+                      type="date"
+                      {...registerAsset("purchaseDate")}
+                    />
+                  </div>
+                  <div className="modern-field">
+                    <label htmlFor="asset-warranty-expiry">
+                      Warranty expiry <span>Optional</span>
+                    </label>
+                    <input
+                      id="asset-warranty-expiry"
+                      type="date"
+                      {...registerAsset("warrantyExpiresOn")}
+                    />
+                  </div>
+                  <div className="modern-field modern-field-wide">
+                    <label htmlFor="asset-warranty-reference">
+                      Warranty or support reference <span>Optional</span>
+                    </label>
+                    <input
+                      id="asset-warranty-reference"
+                      maxLength={150}
+                      {...registerAsset("warrantyReference")}
+                    />
+                  </div>
+                </div>
+                <div className="modern-form-actions">
+                  <div>
+                    <strong>Ready to register?</strong>
+                    <small>
+                      Record starts in received state; later transitions use
+                      approved workflows.
+                    </small>
+                  </div>
+                  <button
+                    className="button"
+                    disabled={
+                      createAsset.isPending ||
+                      !categoriesQuery.data?.items.length ||
+                      !locationsQuery.data?.length
+                    }
+                    type="submit"
+                  >
+                    {createAsset.isPending ? "Registering…" : "Register asset"}
+                  </button>
+                </div>
+              </form>
+            </section>
+          )}
 
           <section className="user-admin-card" aria-labelledby="asset-list">
             <h2 id="asset-list">Registered assets</h2>
@@ -855,7 +785,11 @@ export function AssetsPage() {
                   }}
                   value={locationId}
                 >
-                  <option value="">All assigned locations</option>
+                  <option value="">
+                    {canManageAssets
+                      ? "All assigned locations"
+                      : "All organization locations"}
+                  </option>
                   {locationsQuery.data?.map((location) => (
                     <option key={location.id} value={location.id}>
                       {location.code} — {location.name}
@@ -962,6 +896,32 @@ export function AssetsPage() {
                   ))}
                 </select>
               </label>
+              <label>
+                Warranty expires from
+                <input
+                  type="date"
+                  onChange={(event) => {
+                    updateListSearch({
+                      warrantyExpiresOnFrom: event.target.value,
+                      page: 1,
+                    });
+                  }}
+                  value={warrantyExpiresOnFrom}
+                />
+              </label>
+              <label>
+                Warranty expires through
+                <input
+                  type="date"
+                  onChange={(event) => {
+                    updateListSearch({
+                      warrantyExpiresOnTo: event.target.value,
+                      page: 1,
+                    });
+                  }}
+                  value={warrantyExpiresOnTo}
+                />
+              </label>
             </div>
             <button
               className="button button-secondary"
@@ -974,6 +934,8 @@ export function AssetsPage() {
                   availability: "",
                   condition: "",
                   verification: "",
+                  warrantyExpiresOnFrom: "",
+                  warrantyExpiresOnTo: "",
                   page: 1,
                 });
               }}
@@ -982,6 +944,16 @@ export function AssetsPage() {
               Reset filters
             </button>
 
+            {!canManageAssets && categoriesQuery.isError && (
+              <p className="form-error" role="alert">
+                {authErrorMessage(categoriesQuery.error)}
+              </p>
+            )}
+            {!canManageAssets && locationsQuery.isError && (
+              <p className="form-error" role="alert">
+                {authErrorMessage(locationsQuery.error)}
+              </p>
+            )}
             {assetsQuery.isError && (
               <p className="form-error" role="alert">
                 {authErrorMessage(assetsQuery.error)}
@@ -1001,11 +973,13 @@ export function AssetsPage() {
                         <th>Asset tag</th>
                         <th>Category</th>
                         <th>Serial number</th>
+                        <th>Criticality</th>
                         <th>Location</th>
                         <th>Lifecycle</th>
                         <th>Availability</th>
                         <th>Condition</th>
                         <th>Verification</th>
+                        <th>Warranty expiry</th>
                         <th>Details</th>
                       </tr>
                     </thead>
@@ -1015,6 +989,7 @@ export function AssetsPage() {
                           <td>{asset.assetTag}</td>
                           <td>{asset.category.name}</td>
                           <td>{asset.serialNumber ?? "—"}</td>
+                          <td>{asset.criticality ?? "—"}</td>
                           <td>
                             {asset.location.code} — {asset.location.name}
                           </td>
@@ -1022,6 +997,9 @@ export function AssetsPage() {
                           <td>{asset.availability.replaceAll("_", " ")}</td>
                           <td>{asset.condition}</td>
                           <td>{asset.verification.replaceAll("_", " ")}</td>
+                          <td>
+                            {asset.warrantyExpiresOn?.slice(0, 10) ?? "—"}
+                          </td>
                           <td>
                             <Link
                               params={{ assetId: asset.id }}
@@ -1034,6 +1012,10 @@ export function AssetsPage() {
                                 availability: current.availability ?? "",
                                 condition: current.condition ?? "",
                                 verification: current.verification ?? "",
+                                warrantyExpiresOnFrom:
+                                  current.warrantyExpiresOnFrom ?? "",
+                                warrantyExpiresOnTo:
+                                  current.warrantyExpiresOnTo ?? "",
                               })}
                               to="/assets/$assetId"
                             >

@@ -13,7 +13,12 @@ const profile = {
   model: "",
   serialNumber: "000123",
   sourceReference: "",
+  criticality: "HIGH",
+  purchaseDate: "2026-02-28",
+  warrantyExpiresOn: "2029-02-28",
+  warrantyReference: "WARRANTY-0001",
   notes: "",
+  specifications: {},
 };
 
 describe("asset descriptive profile", () => {
@@ -62,6 +67,8 @@ describe("asset descriptive profile", () => {
       { ...profile, notes: null },
       { ...profile, manufacturer: "x".repeat(151) },
       { ...profile, notes: "x".repeat(2001) },
+      { ...profile, purchaseDate: "2026-02-30" },
+      { ...profile, warrantyExpiresOn: "2029-13-01" },
       {},
     ])
       expect(assetProfileSchema.safeParse(input).success).toBe(false);

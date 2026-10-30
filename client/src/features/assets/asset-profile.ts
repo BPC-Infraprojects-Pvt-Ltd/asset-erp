@@ -8,15 +8,36 @@ export const profileFields = [
   { name: "model", label: "Model", maxLength: 150 },
   { name: "serialNumber", label: "Serial number", maxLength: 150 },
   { name: "sourceReference", label: "Source reference", maxLength: 150 },
+  { name: "purchaseDate", label: "Purchase date", maxLength: 10, type: "date" },
+  {
+    name: "warrantyExpiresOn",
+    label: "Warranty expiry date",
+    maxLength: 10,
+    type: "date",
+  },
+  { name: "warrantyReference", label: "Warranty reference", maxLength: 150 },
   { name: "notes", label: "Notes", maxLength: 2000 },
 ] as const;
+
+const dateOnly = z.string().refine((value) => {
+  if (!value) return true;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return (
+    !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+  );
+}, "Enter a valid calendar date.");
 
 export const assetProfileSchema = z.strictObject({
   manufacturer: z.string().trim().max(150),
   model: z.string().trim().max(150),
   serialNumber: z.string().trim().max(150),
   sourceReference: z.string().trim().max(150),
+  criticality: z.enum(["", "LOW", "MEDIUM", "HIGH", "CRITICAL"]),
+  purchaseDate: dateOnly,
+  warrantyExpiresOn: dateOnly,
+  warrantyReference: z.string().trim().max(150),
   notes: z.string().trim().max(2000),
+  specifications: z.record(z.string(), z.string()),
 });
 
 export function assetProfileValues(asset: Asset): UpdateAssetProfileInput {
@@ -25,7 +46,12 @@ export function assetProfileValues(asset: Asset): UpdateAssetProfileInput {
     model: asset.model ?? "",
     serialNumber: asset.serialNumber ?? "",
     sourceReference: asset.sourceReference ?? "",
+    criticality: asset.criticality ?? "",
+    purchaseDate: asset.purchaseDate?.slice(0, 10) ?? "",
+    warrantyExpiresOn: asset.warrantyExpiresOn?.slice(0, 10) ?? "",
+    warrantyReference: asset.warrantyReference ?? "",
     notes: asset.notes ?? "",
+    specifications: asset.specifications ?? {},
   };
 }
 

@@ -2,12 +2,14 @@ import { Transform, Type } from 'class-transformer';
 import {
   IsInt,
   IsBoolean,
+  IsEnum,
   IsOptional,
   IsString,
   Max,
   MaxLength,
   Min,
 } from 'class-validator';
+import { AssetTrackingMode } from '../../generated/prisma/enums.js';
 
 export class ListAssetCategoriesQueryDto {
   @IsOptional()
@@ -37,4 +39,11 @@ export class ListAssetCategoriesQueryDto {
   })
   @IsBoolean()
   includeInactive = false;
+
+  @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
+  @IsEnum(AssetTrackingMode)
+  trackingMode?: AssetTrackingMode;
 }

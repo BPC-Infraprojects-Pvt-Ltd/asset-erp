@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { assetListSearchSchema } from "./asset-list-search";
+import {
+  assetIdFromScannedCode,
+  assetListSearchSchema,
+} from "./asset-list-search";
 
 describe("asset list route search", () => {
   it("normalizes invalid parameters without rejecting the route", () => {
@@ -12,6 +15,8 @@ describe("asset list route search", () => {
         availability: "UNKNOWN_STATE",
         condition: "UNKNOWN_STATE",
         verification: "UNKNOWN_STATE",
+        warrantyExpiresOnFrom: "2026-02-30",
+        warrantyExpiresOnTo: "not-a-date",
       }),
     ).toEqual({
       page: 1,
@@ -22,6 +27,8 @@ describe("asset list route search", () => {
       availability: "",
       condition: "",
       verification: "",
+      warrantyExpiresOnFrom: "",
+      warrantyExpiresOnTo: "",
     });
   });
 
@@ -36,6 +43,8 @@ describe("asset list route search", () => {
         availability: "ASSIGNED",
         condition: "GOOD",
         verification: "MISSING",
+        warrantyExpiresOnFrom: "2026-01-01",
+        warrantyExpiresOnTo: "2026-12-31",
       }),
     ).toEqual({
       page: 3,
@@ -46,6 +55,18 @@ describe("asset list route search", () => {
       availability: "ASSIGNED",
       condition: "GOOD",
       verification: "MISSING",
+      warrantyExpiresOnFrom: "2026-01-01",
+      warrantyExpiresOnTo: "2026-12-31",
     });
+  });
+
+  it("normalizes Code 39 UUID scans for exact authorized lookup", () => {
+    expect(assetIdFromScannedCode("8E626601B8944F2EACAC85104A978EEA")).toBe(
+      "8e626601-b894-4f2e-acac-85104a978eea",
+    );
+    expect(assetIdFromScannedCode("8e626601-b894-4f2e-acac-85104a978eea")).toBe(
+      "8e626601-b894-4f2e-acac-85104a978eea",
+    );
+    expect(assetIdFromScannedCode("8e626601-b894-invalid")).toBeUndefined();
   });
 });

@@ -197,18 +197,28 @@ export function UsersPage() {
 
       {passwordTarget && (
         <section
-          className="user-admin-card"
+          className="user-admin-card modern-form-card"
           aria-labelledby="reset-password-heading"
         >
-          <h2 id="reset-password-heading">
-            {passwordTarget.isActive ? "Reset password" : "Reactivate account"}
-          </h2>
-          <p>
-            Set a temporary password for {passwordTarget.displayName}. The
-            account will be active and must change it at the next sign-in.
-          </p>
+          <div className="form-card-heading">
+            <span className="form-step-mark" aria-hidden="true">
+              PW
+            </span>
+            <div>
+              <p className="eyebrow">Account security</p>
+              <h2 id="reset-password-heading">
+                {passwordTarget.isActive
+                  ? "Reset password"
+                  : "Reactivate account"}
+              </h2>
+              <p>
+                Set a temporary password for {passwordTarget.displayName}. The
+                account will be active and must change it at the next sign-in.
+              </p>
+            </div>
+          </div>
           <form
-            className="user-create-form"
+            className="user-create-form modern-form"
             onSubmit={(event) => {
               event.preventDefault();
               const parsed = resetPasswordSchema.safeParse(temporaryPassword);
@@ -225,18 +235,26 @@ export function UsersPage() {
               });
             }}
           >
-            <label htmlFor="reset-temporary-password">Temporary password</label>
-            <input
-              id="reset-temporary-password"
-              autoComplete="new-password"
-              type="password"
-              value={temporaryPassword}
-              onChange={(event) => setTemporaryPassword(event.target.value)}
-              aria-invalid={Boolean(passwordError)}
-            />
-            {passwordError && (
-              <span className="field-error">{passwordError}</span>
-            )}
+            <div className="modern-field">
+              <label htmlFor="reset-temporary-password">
+                Temporary password
+              </label>
+              <input
+                id="reset-temporary-password"
+                autoComplete="new-password"
+                type="password"
+                placeholder="Set a temporary password"
+                value={temporaryPassword}
+                onChange={(event) => setTemporaryPassword(event.target.value)}
+                aria-invalid={Boolean(passwordError)}
+              />
+              <small>
+                The user will be asked to replace this at next sign-in.
+              </small>
+              {passwordError && (
+                <span className="field-error">{passwordError}</span>
+              )}
+            </div>
             <div className="user-form-actions">
               <button
                 className="button"
@@ -266,16 +284,25 @@ export function UsersPage() {
 
       {scopeTarget && (
         <section
-          className="user-admin-card"
+          className="user-admin-card modern-form-card"
           aria-labelledby="location-scope-heading"
         >
-          <h2 id="location-scope-heading">
-            Location access for {scopeTarget.displayName}
-          </h2>
-          <p>
-            Each selected location also grants access to descendant locations
-            and their stores. No selections means no location-scoped access.
-          </p>
+          <div className="form-card-heading">
+            <span className="form-step-mark" aria-hidden="true">
+              SC
+            </span>
+            <div>
+              <p className="eyebrow">Data scope</p>
+              <h2 id="location-scope-heading">
+                Location access for {scopeTarget.displayName}
+              </h2>
+              <p>
+                Each selected location also grants access to descendant
+                locations and their stores. No selections means no
+                location-scoped access.
+              </p>
+            </div>
+          </div>
           {locationsQuery.isError && (
             <p className="form-error" role="alert">
               {authErrorMessage(locationsQuery.error)}
@@ -338,64 +365,101 @@ export function UsersPage() {
       )}
 
       <section
-        className="user-admin-card"
+        className="user-admin-card modern-form-card"
         aria-labelledby="create-user-heading"
       >
-        <h2 id="create-user-heading">Create user</h2>
-        <form className="user-create-form" onSubmit={submit} noValidate>
-          <label htmlFor="user-display-name">Name</label>
-          <input
-            id="user-display-name"
-            autoComplete="name"
-            {...register("displayName")}
-            aria-invalid={Boolean(errors.displayName)}
-          />
-          {errors.displayName && (
-            <span className="field-error">{errors.displayName.message}</span>
-          )}
+        <div className="form-card-heading">
+          <span className="form-step-mark" aria-hidden="true">
+            01
+          </span>
+          <div>
+            <p className="eyebrow">Account provisioning</p>
+            <h2 id="create-user-heading">Create user</h2>
+            <p>
+              Provision an organization account with one role. The new user
+              changes their temporary password at first sign-in.
+            </p>
+          </div>
+        </div>
+        <form
+          className="user-create-form modern-form"
+          onSubmit={submit}
+          noValidate
+        >
+          <div className="modern-form-grid">
+            <div className="modern-field">
+              <label htmlFor="user-display-name">Full name</label>
+              <input
+                id="user-display-name"
+                autoComplete="name"
+                placeholder="e.g. Tara Menon"
+                {...register("displayName")}
+                aria-invalid={Boolean(errors.displayName)}
+              />
+              {errors.displayName && (
+                <span className="field-error">
+                  {errors.displayName.message}
+                </span>
+              )}
+            </div>
 
-          <label htmlFor="user-email">Email</label>
-          <input
-            id="user-email"
-            type="email"
-            autoComplete="email"
-            {...register("email")}
-            aria-invalid={Boolean(errors.email)}
-          />
-          {errors.email && (
-            <span className="field-error">{errors.email.message}</span>
-          )}
+            <div className="modern-field">
+              <label htmlFor="user-email">Work email</label>
+              <input
+                id="user-email"
+                type="email"
+                autoComplete="email"
+                placeholder="name@organization.com"
+                {...register("email")}
+                aria-invalid={Boolean(errors.email)}
+              />
+              {errors.email && (
+                <span className="field-error">{errors.email.message}</span>
+              )}
+            </div>
 
-          <label htmlFor="user-temporary-password">Temporary password</label>
-          <input
-            id="user-temporary-password"
-            type="password"
-            autoComplete="new-password"
-            {...register("temporaryPassword")}
-            aria-invalid={Boolean(errors.temporaryPassword)}
-          />
-          {errors.temporaryPassword && (
-            <span className="field-error">
-              {errors.temporaryPassword.message}
-            </span>
-          )}
+            <div className="modern-field">
+              <label htmlFor="user-temporary-password">
+                Temporary password
+              </label>
+              <input
+                id="user-temporary-password"
+                type="password"
+                autoComplete="new-password"
+                placeholder="Set a temporary password"
+                {...register("temporaryPassword")}
+                aria-invalid={Boolean(errors.temporaryPassword)}
+              />
+              <small>The user will be asked to change this at sign-in.</small>
+              {errors.temporaryPassword && (
+                <span className="field-error">
+                  {errors.temporaryPassword.message}
+                </span>
+              )}
+            </div>
 
-          <label htmlFor="user-role">Role</label>
-          <select id="user-role" {...register("role")}>
-            {userRoles.map((role) => (
-              <option key={role.value} value={role.value}>
-                {role.label}
-              </option>
-            ))}
-          </select>
+            <div className="modern-field">
+              <label htmlFor="user-role">Role</label>
+              <select id="user-role" {...register("role")}>
+                {userRoles.map((role) => (
+                  <option key={role.value} value={role.value}>
+                    {role.label}
+                  </option>
+                ))}
+              </select>
+              <small>Each account has one assigned role.</small>
+            </div>
+          </div>
 
-          <button
-            className="button"
-            disabled={isSubmitting || createUser.isPending}
-            type="submit"
-          >
-            Create user
-          </button>
+          <div className="modern-form-actions">
+            <button
+              className="button"
+              disabled={isSubmitting || createUser.isPending}
+              type="submit"
+            >
+              {createUser.isPending ? "Creating account…" : "Create user"}
+            </button>
+          </div>
         </form>
       </section>
 

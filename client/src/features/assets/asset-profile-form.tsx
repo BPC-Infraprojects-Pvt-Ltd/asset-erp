@@ -77,6 +77,18 @@ export function AssetProfileForm({
       });
       return;
     }
+    const missingSpecification = asset.category.specificationFields.find(
+      (field) =>
+        field.required && !parsed.data.specifications[field.key]?.trim(),
+    );
+    if (missingSpecification) {
+      setError({
+        conflict: false,
+        requiresReview: false,
+        message: `${missingSpecification.label} is required for this category.`,
+      });
+      return;
+    }
     setError(null);
     update.mutate(parsed.data);
   });
@@ -118,8 +130,8 @@ export function AssetProfileForm({
     >
       <h2>Edit descriptive profile</h2>
       <p>
-        Editing version {version}. Only the five descriptive fields below can
-        change. Blank values clear a field.
+        Editing version {version}. Blank descriptive values clear a field.
+        Category specification keys remain fixed.
       </p>
       <form className="auth-form" onSubmit={(event) => void submit(event)}>
         <fieldset disabled={update.isPending || reloading}>
@@ -137,11 +149,41 @@ export function AssetProfileForm({
                 <input
                   id={`profile-${field.name}`}
                   maxLength={field.maxLength}
+                  type={"type" in field ? field.type : "text"}
                   {...register(field.name)}
                 />
               )}
             </label>
           ))}
+          <label htmlFor="profile-criticality">
+            Criticality
+            <select id="profile-criticality" {...register("criticality")}>
+              <option value="">Not set</option>
+              <option value="LOW">Low</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="HIGH">High</option>
+              <option value="CRITICAL">Critical</option>
+            </select>
+          </label>
+          {asset.category.specificationFields.length > 0 && (
+            <section className="asset-profile-specifications">
+              <h3>Category specifications</h3>
+              {asset.category.specificationFields.map((field) => (
+                <label
+                  key={field.key}
+                  htmlFor={`profile-specification-${field.key}`}
+                >
+                  {field.label}
+                  {field.required && <small>Required</small>}
+                  <input
+                    id={`profile-specification-${field.key}`}
+                    maxLength={2000}
+                    {...register(`specifications.${field.key}` as const)}
+                  />
+                </label>
+              ))}
+            </section>
+          )}
         </fieldset>
         {error && (
           <p className="form-error" role="alert">
@@ -179,6 +221,12 @@ export function AssetProfileForm({
                 <div key={field.name}>
                   <dt>{field.label}</dt>
                   <dd>{asset[field.name] ?? "—"}</dd>
+                </div>
+              ))}
+              {asset.category.specificationFields.map((field) => (
+                <div key={field.key}>
+                  <dt>{field.label}</dt>
+                  <dd>{asset.specifications?.[field.key] ?? "—"}</dd>
                 </div>
               ))}
             </dl>

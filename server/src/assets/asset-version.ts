@@ -8,6 +8,10 @@ export function parseAssetCategoryVersion(value: string | undefined): number {
   return parseVersion(value, 'asset category');
 }
 
+export function parseAssetImportVersion(value: string | undefined): number {
+  return parseVersion(value, 'asset import job');
+}
+
 function parseVersion(value: string | undefined, resource: string): number {
   if (!value || !/^"[1-9]\d*"$/.test(value)) {
     throw new BadRequestException(

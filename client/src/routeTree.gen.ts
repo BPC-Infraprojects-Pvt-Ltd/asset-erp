@@ -10,11 +10,21 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AssetCategoriesRouteImport } from './routes/asset-categories'
 import { Route as AssetsRouteImport } from './routes/assets'
+import { Route as AssignmentsRouteImport } from './routes/assignments'
+import { Route as ImportsRouteImport } from './routes/imports'
+import { Route as LabelsRouteImport } from './routes/labels'
 import { Route as LocationsRouteImport } from './routes/locations'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as ReservationsRouteImport } from './routes/reservations'
+import { Route as RetirementsRouteImport } from './routes/retirements'
+import { Route as StockRouteImport } from './routes/stock'
+import { Route as TransfersRouteImport } from './routes/transfers'
 import { Route as UsersRouteImport } from './routes/users'
+import { Route as VerificationCampaignsRouteImport } from './routes/verification-campaigns'
 import { Route as AssetsAssetIdRouteImport } from './routes/assets.$assetId'
+import { Route as ModulesModuleIdRouteImport } from './routes/modules.$moduleId'
 import { Route as PasswordChangeRouteImport } from './routes/password.change'
 
 const IndexRoute = IndexRouteImport.update({
@@ -22,9 +32,29 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AssetCategoriesRoute = AssetCategoriesRouteImport.update({
+  id: '/asset-categories',
+  path: '/asset-categories',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AssetsRoute = AssetsRouteImport.update({
   id: '/assets',
   path: '/assets',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AssignmentsRoute = AssignmentsRouteImport.update({
+  id: '/assignments',
+  path: '/assignments',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ImportsRoute = ImportsRouteImport.update({
+  id: '/imports',
+  path: '/imports',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LabelsRoute = LabelsRouteImport.update({
+  id: '/labels',
+  path: '/labels',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LocationsRoute = LocationsRouteImport.update({
@@ -37,15 +67,45 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReservationsRoute = ReservationsRouteImport.update({
+  id: '/reservations',
+  path: '/reservations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RetirementsRoute = RetirementsRouteImport.update({
+  id: '/retirements',
+  path: '/retirements',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StockRoute = StockRouteImport.update({
+  id: '/stock',
+  path: '/stock',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TransfersRoute = TransfersRouteImport.update({
+  id: '/transfers',
+  path: '/transfers',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const UsersRoute = UsersRouteImport.update({
   id: '/users',
   path: '/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VerificationCampaignsRoute = VerificationCampaignsRouteImport.update({
+  id: '/verification-campaigns',
+  path: '/verification-campaigns',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AssetsAssetIdRoute = AssetsAssetIdRouteImport.update({
   id: '/$assetId',
   path: '/$assetId',
   getParentRoute: () => AssetsRoute,
+} as any)
+const ModulesModuleIdRoute = ModulesModuleIdRouteImport.update({
+  id: '/modules/$moduleId',
+  path: '/modules/$moduleId',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const PasswordChangeRoute = PasswordChangeRouteImport.update({
   id: '/password/change',
@@ -55,68 +115,138 @@ const PasswordChangeRoute = PasswordChangeRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/asset-categories': typeof AssetCategoriesRoute
   '/assets': typeof AssetsRouteWithChildren
+  '/assignments': typeof AssignmentsRoute
+  '/imports': typeof ImportsRoute
+  '/labels': typeof LabelsRoute
   '/locations': typeof LocationsRoute
   '/login': typeof LoginRoute
+  '/reservations': typeof ReservationsRoute
+  '/retirements': typeof RetirementsRoute
+  '/stock': typeof StockRoute
+  '/transfers': typeof TransfersRoute
   '/users': typeof UsersRoute
+  '/verification-campaigns': typeof VerificationCampaignsRoute
   '/assets/$assetId': typeof AssetsAssetIdRoute
+  '/modules/$moduleId': typeof ModulesModuleIdRoute
   '/password/change': typeof PasswordChangeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/asset-categories': typeof AssetCategoriesRoute
   '/assets': typeof AssetsRouteWithChildren
+  '/assignments': typeof AssignmentsRoute
+  '/imports': typeof ImportsRoute
+  '/labels': typeof LabelsRoute
   '/locations': typeof LocationsRoute
   '/login': typeof LoginRoute
+  '/reservations': typeof ReservationsRoute
+  '/retirements': typeof RetirementsRoute
+  '/stock': typeof StockRoute
+  '/transfers': typeof TransfersRoute
   '/users': typeof UsersRoute
+  '/verification-campaigns': typeof VerificationCampaignsRoute
   '/assets/$assetId': typeof AssetsAssetIdRoute
+  '/modules/$moduleId': typeof ModulesModuleIdRoute
   '/password/change': typeof PasswordChangeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/asset-categories': typeof AssetCategoriesRoute
   '/assets': typeof AssetsRouteWithChildren
+  '/assignments': typeof AssignmentsRoute
+  '/imports': typeof ImportsRoute
+  '/labels': typeof LabelsRoute
   '/locations': typeof LocationsRoute
   '/login': typeof LoginRoute
+  '/reservations': typeof ReservationsRoute
+  '/retirements': typeof RetirementsRoute
+  '/stock': typeof StockRoute
+  '/transfers': typeof TransfersRoute
   '/users': typeof UsersRoute
+  '/verification-campaigns': typeof VerificationCampaignsRoute
   '/assets/$assetId': typeof AssetsAssetIdRoute
+  '/modules/$moduleId': typeof ModulesModuleIdRoute
   '/password/change': typeof PasswordChangeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/asset-categories'
     | '/assets'
+    | '/assignments'
+    | '/imports'
+    | '/labels'
     | '/locations'
     | '/login'
+    | '/reservations'
+    | '/retirements'
+    | '/stock'
+    | '/transfers'
     | '/users'
+    | '/verification-campaigns'
     | '/assets/$assetId'
+    | '/modules/$moduleId'
     | '/password/change'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/asset-categories'
     | '/assets'
+    | '/assignments'
+    | '/imports'
+    | '/labels'
     | '/locations'
     | '/login'
+    | '/reservations'
+    | '/retirements'
+    | '/stock'
+    | '/transfers'
     | '/users'
+    | '/verification-campaigns'
     | '/assets/$assetId'
+    | '/modules/$moduleId'
     | '/password/change'
   id:
     | '__root__'
     | '/'
+    | '/asset-categories'
     | '/assets'
+    | '/assignments'
+    | '/imports'
+    | '/labels'
     | '/locations'
     | '/login'
+    | '/reservations'
+    | '/retirements'
+    | '/stock'
+    | '/transfers'
     | '/users'
+    | '/verification-campaigns'
     | '/assets/$assetId'
+    | '/modules/$moduleId'
     | '/password/change'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AssetCategoriesRoute: typeof AssetCategoriesRoute
   AssetsRoute: typeof AssetsRouteWithChildren
+  AssignmentsRoute: typeof AssignmentsRoute
+  ImportsRoute: typeof ImportsRoute
+  LabelsRoute: typeof LabelsRoute
   LocationsRoute: typeof LocationsRoute
   LoginRoute: typeof LoginRoute
+  ReservationsRoute: typeof ReservationsRoute
+  RetirementsRoute: typeof RetirementsRoute
+  StockRoute: typeof StockRoute
+  TransfersRoute: typeof TransfersRoute
   UsersRoute: typeof UsersRoute
+  VerificationCampaignsRoute: typeof VerificationCampaignsRoute
+  ModulesModuleIdRoute: typeof ModulesModuleIdRoute
   PasswordChangeRoute: typeof PasswordChangeRoute
 }
 
@@ -129,11 +259,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/asset-categories': {
+      id: '/asset-categories'
+      path: '/asset-categories'
+      fullPath: '/asset-categories'
+      preLoaderRoute: typeof AssetCategoriesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/assets': {
       id: '/assets'
       path: '/assets'
       fullPath: '/assets'
       preLoaderRoute: typeof AssetsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/assignments': {
+      id: '/assignments'
+      path: '/assignments'
+      fullPath: '/assignments'
+      preLoaderRoute: typeof AssignmentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/imports': {
+      id: '/imports'
+      path: '/imports'
+      fullPath: '/imports'
+      preLoaderRoute: typeof ImportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/labels': {
+      id: '/labels'
+      path: '/labels'
+      fullPath: '/labels'
+      preLoaderRoute: typeof LabelsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/locations': {
@@ -150,11 +308,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reservations': {
+      id: '/reservations'
+      path: '/reservations'
+      fullPath: '/reservations'
+      preLoaderRoute: typeof ReservationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/retirements': {
+      id: '/retirements'
+      path: '/retirements'
+      fullPath: '/retirements'
+      preLoaderRoute: typeof RetirementsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/stock': {
+      id: '/stock'
+      path: '/stock'
+      fullPath: '/stock'
+      preLoaderRoute: typeof StockRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/transfers': {
+      id: '/transfers'
+      path: '/transfers'
+      fullPath: '/transfers'
+      preLoaderRoute: typeof TransfersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/users': {
       id: '/users'
       path: '/users'
       fullPath: '/users'
       preLoaderRoute: typeof UsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/verification-campaigns': {
+      id: '/verification-campaigns'
+      path: '/verification-campaigns'
+      fullPath: '/verification-campaigns'
+      preLoaderRoute: typeof VerificationCampaignsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/assets/$assetId': {
@@ -163,6 +356,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/assets/$assetId'
       preLoaderRoute: typeof AssetsAssetIdRouteImport
       parentRoute: typeof AssetsRoute
+    }
+    '/modules/$moduleId': {
+      id: '/modules/$moduleId'
+      path: '/modules/$moduleId'
+      fullPath: '/modules/$moduleId'
+      preLoaderRoute: typeof ModulesModuleIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/password/change': {
       id: '/password/change'
@@ -187,10 +387,20 @@ const AssetsRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AssetCategoriesRoute: AssetCategoriesRoute,
   AssetsRoute: AssetsRouteWithChildren,
+  AssignmentsRoute: AssignmentsRoute,
+  ImportsRoute: ImportsRoute,
+  LabelsRoute: LabelsRoute,
   LocationsRoute: LocationsRoute,
   LoginRoute: LoginRoute,
+  ReservationsRoute: ReservationsRoute,
+  RetirementsRoute: RetirementsRoute,
+  StockRoute: StockRoute,
+  TransfersRoute: TransfersRoute,
   UsersRoute: UsersRoute,
+  VerificationCampaignsRoute: VerificationCampaignsRoute,
+  ModulesModuleIdRoute: ModulesModuleIdRoute,
   PasswordChangeRoute: PasswordChangeRoute,
 }
 export const routeTree = rootRouteImport

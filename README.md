@@ -42,6 +42,31 @@ Administrators can also create the approved Location tree and attached Stores,
 and grant Location subtrees to Asset Manager and Procurement/Finance users.
 Those grants include descendant Locations and their Stores; grant/revocation
 history is retained indefinitely.
+Administrators can also manage Departments, Cost Centers, Manufacturers,
+Models, and minimal employee references from Administration. Asset Managers
+and Technicians can read manufacturer/model references; Asset Managers can
+read active employee references. Employee records do not require or link to a
+login account.
+
+### Diagnosing API errors
+
+Unexpected API exceptions return a generic problem-details response. Match its
+`correlationId` (also in `X-Correlation-ID`) to the server's
+`Unhandled API exception` log. The log includes the HTTP method, matched route
+pattern, error type, recognized Prisma/PostgreSQL/Node error code when available,
+and stack source locations. A route is omitted if failure occurs before routing;
+raw URLs and request parameters are not used as a logging fallback.
+
+Request bodies, headers, cookies, raw exception messages, causes, and database
+metadata are deliberately excluded because they can contain credentials or query
+inputs. Only local file and Node stack locations from a recognized error stack
+are retained. If more detail is needed, inspect the exception with a local
+debugger rather than copying sensitive data into logs.
+
+A correlation-only log from an older build cannot identify the cause; reproduce
+the failing action with the updated API. For example, Prisma `P2021`/`P2022`
+indicate a missing table/column: verify the selected database and reviewed
+migrations before applying anything. Do not reset or seed an unknown database.
 
 ### Development example data
 
@@ -119,11 +144,18 @@ reviewing the server profile before retrying.
 Business audit infrastructure remains a gap; profile editing adds no audit
 or outbox claims and does not enable any receiving or state workflow.
 
-The asset-register migration is additive and has not been applied by this
-development task. Apply reviewed migrations only to an approved PostgreSQL
-database. Public registration, receiving, custody, movements, maintenance,
-verification workflows, and other role-specific domain access remain
-unimplemented.
+As of 2026-10-29, the additive asset-category-version,
+department/cost-center, and software-catalog migrations were applied to the
+configured local development database after authorization. The asset-category
+endpoint then returned successfully in the browser. The organization-scoped
+software product and edition API is available at `/api/v1/software/products`
+for Software/License Managers; the client catalog screens are not yet
+connected to it. Administrators can manage live Departments and Cost Centers
+from their page in the application, backed by `/api/v1/master/departments`
+and `/api/v1/master/cost-centers`. Always check migration status for the
+intended database and apply reviewed migrations only to an approved target.
+Public registration, receiving, custody, movements, maintenance, verification
+workflows, and other role-specific domain access remain unimplemented.
 
 Read `AGENTS.md` and the product, frontend, and backend requirements before
 implementing domain behavior. Those requirements are proposed; unresolved

@@ -157,6 +157,146 @@ feature boundaries.
 Current template services use Prisma directly.
 Do not add a universal repository layer just to implement CRUD.
 
+### 4.3 Verified implementation increment (2026-10-29)
+
+The source now includes organization-scoped Department and CostCenter Prisma
+models and guarded `/api/v1/master/departments` and
+`/api/v1/master/cost-centers` routes. This initial increment is
+Administrator-only organization configuration. Codes are trimmed and
+uppercased, names are trimmed, codes are unique within an organization, and
+records are deactivated/reactivated rather than deleted. Updates and lifecycle
+commands require a quoted `If-Match` version and return conflicts for stale
+versions.
+Departments and cost centers are independent references in this increment;
+no relationship between them is assumed.
+
+The source also includes the organization-scoped software product/edition
+catalog at `/api/v1/software/products`. Access is limited to the approved
+Software/License Manager role. Product identity is unique by normalized
+publisher/name within an organization; editions are unique by product,
+normalized edition name, and version label. The catalog stores commercial
+classification and policy status (`REVIEW_REQUIRED`, `APPROVED`,
+`PROHIBITED`); these statuses are catalog data, not an approval workflow.
+Product list/detail/create/update and explicit lifecycle routes are registered;
+edition list/create/update and lifecycle routes are nested under the product.
+Migration `20261029123000_software_catalog` is additive.
+
+The source also provides manufacturer, asset-model, and employee-reference
+APIs. Administrators manage all three; Asset Managers and Technicians may read
+manufacturer/model data, while Asset Managers may read active employee
+references for operations. Employee records contain only employee number and
+display name and remain separate from login identities. Model records require
+a same-organization manufacturer. Migration
+`20261029130000_administration_masters` is additive.
+
+Asset register list and detail reads are available to Administrators within
+their organization and to Asset Managers within their assigned location scope.
+Asset registration and profile updates remain Asset Manager-only.
+Paged asset search also accepts an exact asset UUID for scan-based label
+lookups; organization and location scope are applied before returning a match.
+The register accepts inclusive date-only bounds for warranty expiry, validates
+the range, and applies the filter within the same organization/location scope.
+The `POST /assets/:assetId/commission` command moves only a version-matched
+`RECEIVED` asset to `ACTIVE` and records its date-only commissioning date.
+The asset detail history now records direct registration and descriptive
+profile edits and commissioning in the same transaction as the asset write.
+It is not a general business-audit facility and does not claim
+database-enforced immutability.
+Asset details also expose scoped parent-child relationships. Asset Managers
+can add/end links; an organization-scoped transaction lock prevents concurrent
+relationship changes from introducing a cycle. Component installation/removal
+history remains separate work.
+Asset reservations are exposed at `/api/v1/reservations` for Asset Managers.
+They target active employee references and active assets, use inclusive UTC
+calendar-date windows, reject overlapping holds, and derive current reserved
+availability without overwriting the Asset's stored availability. Creation
+uses an actor/organization-scoped idempotency key and a serializable,
+per-asset-locked transaction; cancellation is version-checked. No approval
+route is enabled.
+Assignments and returns are available to Asset Managers at
+`/api/v1/assignments`. They enforce one open assignment per asset, scope-check
+every asset and employee, and commit custody changes, return evidence, and
+history events transactionally. Returns requiring inspection or recording
+damage/nonfunctionality quarantine the asset. Employee acknowledgment remains
+pending because employee-to-login self-service is not enabled.
+Transfers are available to Asset Managers at `/api/v1/transfers`. A
+multi-asset draft requires one source location, an accessible active
+destination, active available assets, and no conflicting reservation,
+assignment, or open transfer. Version-checked dispatch changes availability
+to `IN_TRANSIT`; each confirmed receipt updates only that asset's location and
+condition. Missing/rejected lines remain visible exceptions. Drafts can be
+cancelled, but post-dispatch cancellation and discrepancy reconciliation are
+not enabled because an approved recovery authority and evidence policy are
+still required.
+Accessories and spare stock are available under `/api/v1/stock`. Hardware
+categories carry an immutable `INDIVIDUAL` or `QUANTITY` tracking mode; the
+asset register accepts only individual categories, while stock items require
+quantity categories. Receipt, issue, return, and store transfer are durable
+movement rows; balances are derived per accessible store and reservations are
+separate versioned holds. Whole units only are implemented as the current
+pragmatic default, without conversions. Adjustments remain disabled until an
+approved adjustment authority is defined.
+Component installation/removal is a separate Asset Manager command at
+`/api/v1/assets/:assetId/components`. It retains install/removal actors,
+timestamps, notes, versions, and both asset history events without rewriting
+availability or custody. A component can have only one open installation;
+active generic relationships and installations share the cycle check. An
+installed component cannot be reserved, assigned, or transferred separately;
+removal requires both assets to be available and free of open custody,
+reservation, and transfer operations.
+Asset imports are available to Asset Managers at `/api/v1/imports`. They
+accept UTF-8 CSV only, limited to 1 MiB and 2,000 data rows; the source bytes
+are parsed in bounded memory and never stored. Extension and declared MIME are
+checked, UTF-8 decoding is strict, and binary NUL content is rejected. No
+antivirus service is available; spreadsheet and executable formats are not
+accepted, so this is not a general attachment-scanning facility. Preview
+persists the checksum, job
+state, counts, and row/field error metadata without row values. Commit requires
+the same file checksum, revalidates references and duplicates, and creates
+assets, registration history, and the committed job state in one all-or-nothing
+transaction. The format is plain text only (no spreadsheet binaries or
+macros), and the application does not export spreadsheet errors. Job/error
+metadata has no automatic expiry yet; retention policy remains a follow-up.
+Asset categories define up to 20 fixed text specification fields; registration,
+profile updates, and imports validate per-asset values against that definition.
+The asset profile and import path also support optional purchase date, warranty
+expiry date, and one warranty/support reference. Dates are validated as
+calendar dates and stored as PostgreSQL `DATE` values. These fields do not
+replace the still-unimplemented contract-linked model for multiple warranties
+and support agreements, vendor terms, claims, or coverage documents.
+Physical verification campaigns are available at
+`/api/v1/verification/campaigns` to Asset Managers in their assigned location
+scope. Campaign creation snapshots every non-disposed asset at one accessible
+location. Observations are append-only and classify found, missing, misplaced,
+tag-mismatched, damaged, disputed, unexpected, or duplicate equipment.
+Observations do not immediately alter asset data. Explicit, idempotent review
+may update only the asset verification dimension, and only against the asset
+version captured by the campaign; lifecycle, location, condition, and custody
+remain unchanged. Campaign completion requires every expected asset's latest
+observation and all unexpected observations to be reviewed. Text notes are
+supported; photograph uploads remain unavailable because an approved document
+storage and scanning lifecycle is not yet implemented.
+Asset Managers can submit scoped retirement requests with a reason and impact
+review at `/api/v1/retirements`. Requests are idempotent, one pending request
+is allowed per asset, and submission records history without changing
+lifecycle, availability, location, or custody. Approval, recovery completion,
+sanitization evidence, and disposal commands remain unavailable until their
+authority, evidence, and security-owner requirements are approved.
+
+Following explicit user authorization, the asset-category-version,
+department/cost-center, software-catalog, and Administration master migrations
+were applied to the configured local `asset_erp_dev` database. The additive
+asset-transfer, accessory-stock, asset-import, component-installation,
+asset-specification, asset purchase/warranty profile, asset-verification, and
+retirement-request migrations were also applied; the latest read-only
+migration-status check reported the schema up to date. The category
+list endpoint returned HTTP 200 after its missing category-version columns
+were migrated. This does not certify any other database or authorize
+production rollout. Workflow/notification policy configuration remains
+blocked by unresolved authority and evidence decisions. Software installations,
+normalization mappings, licensing, audit, and external synchronization remain
+separate backend work.
+
 ## 5. Identity, Organization, and Scope
 
 ### 5.1 Session baseline

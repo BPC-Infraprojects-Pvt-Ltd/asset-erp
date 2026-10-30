@@ -7,6 +7,7 @@ import {
   IsUUID,
   Max,
   MaxLength,
+  Matches,
   Min,
 } from 'class-validator';
 import {
@@ -42,6 +43,10 @@ export class ListAssetsQueryDto {
 
   @IsOptional()
   @IsUUID()
+  assetIdExact?: string;
+
+  @IsOptional()
+  @IsUUID()
   categoryId?: string;
 
   @IsOptional()
@@ -65,4 +70,14 @@ export class ListAssetsQueryDto {
   @IsString()
   @MaxLength(150)
   serialNumberExact?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  warrantyExpiresOnFrom?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  warrantyExpiresOnTo?: string;
 }

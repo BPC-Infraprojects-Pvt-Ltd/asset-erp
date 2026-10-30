@@ -142,6 +142,7 @@ export class LocationsService {
 
   private async accessibleLocationIds(
     actor: AuthenticatedActor,
+    database: PrismaService | Prisma.TransactionClient = this.prisma,
   ): Promise<string[] | null> {
     if (actor.role === UserRole.ADMINISTRATOR) {
       return null;
@@ -156,14 +157,14 @@ export class LocationsService {
     }
 
     const [locations, grants] = await Promise.all([
-      this.prisma.location.findMany({
+      database.location.findMany({
         where: {
           organizationId: actor.organizationId,
           isActive: true,
         },
         select: { id: true, parentLocationId: true },
       }),
-      this.prisma.userLocationScope.findMany({
+      database.userLocationScope.findMany({
         where: {
           organizationId: actor.organizationId,
           userId: actor.userId,
@@ -197,8 +198,9 @@ export class LocationsService {
 
   getAccessibleLocationIds(
     actor: AuthenticatedActor,
+    database?: Prisma.TransactionClient,
   ): Promise<string[] | null> {
-    return this.accessibleLocationIds(actor);
+    return this.accessibleLocationIds(actor, database ?? this.prisma);
   }
 
   private requireAdministrator(actor: AuthenticatedActor): void {

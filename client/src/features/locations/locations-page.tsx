@@ -113,8 +113,22 @@ export function LocationsPage() {
       </div>
 
       {isAdministrator && (
-        <section className="user-admin-card" aria-labelledby="create-location">
-          <h2 id="create-location">Create location</h2>
+        <section
+          className="user-admin-card modern-form-card"
+          aria-labelledby="create-location"
+        >
+          <div className="form-card-heading">
+            <span className="form-step-mark" aria-hidden="true">
+              01
+            </span>
+            <div>
+              <p className="eyebrow">Organization structure</p>
+              <h2 id="create-location">Create location</h2>
+              <p>
+                Add a parent or child location in the organization hierarchy.
+              </p>
+            </div>
+          </div>
           {locationMessage && (
             <p className="form-error" role="alert">
               {locationMessage}
@@ -125,43 +139,88 @@ export function LocationsPage() {
               {authErrorMessage(createLocation.error)}
             </p>
           )}
-          <form className="user-create-form" onSubmit={createLocationForm}>
-            <label htmlFor="location-code">Code</label>
-            <input id="location-code" {...registerLocation("code")} />
-            {locationErrors.code && (
-              <span className="field-error">{locationErrors.code.message}</span>
-            )}
-            <label htmlFor="location-name">Name</label>
-            <input id="location-name" {...registerLocation("name")} />
-            {locationErrors.name && (
-              <span className="field-error">{locationErrors.name.message}</span>
-            )}
-            <label htmlFor="location-parent">Parent location</label>
-            <select
-              id="location-parent"
-              {...registerLocation("parentLocationId")}
-            >
-              <option value="">Top-level location</option>
-              {locationsQuery.data?.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.code} — {location.name}
-                </option>
-              ))}
-            </select>
-            <button
-              className="button"
-              disabled={createLocation.isPending}
-              type="submit"
-            >
-              Create location
-            </button>
+          <form
+            className="user-create-form modern-form"
+            onSubmit={createLocationForm}
+          >
+            <div className="modern-form-grid">
+              <div className="modern-field">
+                <label htmlFor="location-code">Location code</label>
+                <input
+                  id="location-code"
+                  placeholder="e.g. PUNE-HQ"
+                  {...registerLocation("code")}
+                />
+                <small>Use a stable code for lists and references.</small>
+                {locationErrors.code && (
+                  <span className="field-error">
+                    {locationErrors.code.message}
+                  </span>
+                )}
+              </div>
+              <div className="modern-field">
+                <label htmlFor="location-name">Location name</label>
+                <input
+                  id="location-name"
+                  placeholder="e.g. Pune headquarters"
+                  {...registerLocation("name")}
+                />
+                {locationErrors.name && (
+                  <span className="field-error">
+                    {locationErrors.name.message}
+                  </span>
+                )}
+              </div>
+              <div className="modern-field modern-field-wide">
+                <label htmlFor="location-parent">Parent location</label>
+                <select
+                  id="location-parent"
+                  {...registerLocation("parentLocationId")}
+                >
+                  <option value="">Top-level location</option>
+                  {locationsQuery.data?.map((location) => (
+                    <option key={location.id} value={location.id}>
+                      {location.code} — {location.name}
+                    </option>
+                  ))}
+                </select>
+                <small>
+                  Choose a parent to create a child location, or leave this
+                  empty for a top-level location.
+                </small>
+              </div>
+            </div>
+            <div className="modern-form-actions">
+              <button
+                className="button"
+                disabled={createLocation.isPending}
+                type="submit"
+              >
+                {createLocation.isPending ? "Creating…" : "Create location"}
+              </button>
+            </div>
           </form>
         </section>
       )}
 
       {isAdministrator && (
-        <section className="user-admin-card" aria-labelledby="create-store">
-          <h2 id="create-store">Create store</h2>
+        <section
+          className="user-admin-card modern-form-card"
+          aria-labelledby="create-store"
+        >
+          <div className="form-card-heading">
+            <span className="form-step-mark" aria-hidden="true">
+              02
+            </span>
+            <div>
+              <p className="eyebrow">Storage location</p>
+              <h2 id="create-store">Create store</h2>
+              <p>
+                Attach a store to one location. Location grants include its
+                stores and descendants.
+              </p>
+            </div>
+          </div>
           {storeMessage && (
             <p className="form-error" role="alert">
               {storeMessage}
@@ -172,38 +231,64 @@ export function LocationsPage() {
               {authErrorMessage(createStore.error)}
             </p>
           )}
-          <form className="user-create-form" onSubmit={createStoreForm}>
-            <label htmlFor="store-code">Code</label>
-            <input id="store-code" {...registerStore("code")} />
-            {storeErrors.code && (
-              <span className="field-error">{storeErrors.code.message}</span>
-            )}
-            <label htmlFor="store-name">Name</label>
-            <input id="store-name" {...registerStore("name")} />
-            {storeErrors.name && (
-              <span className="field-error">{storeErrors.name.message}</span>
-            )}
-            <label htmlFor="store-location">Location</label>
-            <select id="store-location" {...registerStore("locationId")}>
-              <option value="">Select a location</option>
-              {locationsQuery.data?.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.code} — {location.name}
-                </option>
-              ))}
-            </select>
-            {storeErrors.locationId && (
-              <span className="field-error">
-                {storeErrors.locationId.message}
-              </span>
-            )}
-            <button
-              className="button"
-              disabled={createStore.isPending || !locationsQuery.data?.length}
-              type="submit"
-            >
-              Create store
-            </button>
+          <form
+            className="user-create-form modern-form"
+            onSubmit={createStoreForm}
+          >
+            <div className="modern-form-grid">
+              <div className="modern-field">
+                <label htmlFor="store-code">Store code</label>
+                <input
+                  id="store-code"
+                  placeholder="e.g. PUNE-IT-STORE"
+                  {...registerStore("code")}
+                />
+                <small>Keep the store identifier short and recognizable.</small>
+                {storeErrors.code && (
+                  <span className="field-error">
+                    {storeErrors.code.message}
+                  </span>
+                )}
+              </div>
+              <div className="modern-field">
+                <label htmlFor="store-name">Store name</label>
+                <input
+                  id="store-name"
+                  placeholder="e.g. IT equipment store"
+                  {...registerStore("name")}
+                />
+                {storeErrors.name && (
+                  <span className="field-error">
+                    {storeErrors.name.message}
+                  </span>
+                )}
+              </div>
+              <div className="modern-field modern-field-wide">
+                <label htmlFor="store-location">Attached location</label>
+                <select id="store-location" {...registerStore("locationId")}>
+                  <option value="">Select a location</option>
+                  {locationsQuery.data?.map((location) => (
+                    <option key={location.id} value={location.id}>
+                      {location.code} — {location.name}
+                    </option>
+                  ))}
+                </select>
+                {storeErrors.locationId && (
+                  <span className="field-error">
+                    {storeErrors.locationId.message}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="modern-form-actions">
+              <button
+                className="button"
+                disabled={createStore.isPending || !locationsQuery.data?.length}
+                type="submit"
+              >
+                {createStore.isPending ? "Creating…" : "Create store"}
+              </button>
+            </div>
           </form>
         </section>
       )}

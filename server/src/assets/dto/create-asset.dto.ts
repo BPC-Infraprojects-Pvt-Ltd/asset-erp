@@ -1,13 +1,16 @@
 import { Transform } from 'class-transformer';
 import {
   IsEnum,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
 import {
+  AssetCriticality,
   AssetAvailability,
   AssetCondition,
 } from '../../generated/prisma/enums.js';
@@ -30,6 +33,10 @@ export class CreateAssetDto {
 
   @IsEnum(AssetCondition)
   condition!: AssetCondition;
+
+  @IsOptional()
+  @IsEnum(AssetCriticality)
+  criticality?: AssetCriticality;
 
   @IsOptional()
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
@@ -60,4 +67,26 @@ export class CreateAssetDto {
   @IsString()
   @MaxLength(2000)
   notes?: string;
+
+  @IsOptional()
+  @IsObject()
+  specifications?: Record<string, unknown>;
+
+  @IsOptional()
+  @Transform(({ value }) => (value === '' ? undefined : value))
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  purchaseDate?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => (value === '' ? undefined : value))
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  warrantyExpiresOn?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MaxLength(150)
+  warrantyReference?: string;
 }

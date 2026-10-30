@@ -26,7 +26,20 @@ export class ProblemDetailsFilter implements ExceptionFilter {
         : 'An unexpected server error occurred.';
 
     if (!(exception instanceof HttpException)) {
-      this.logger.error(`Unhandled API exception (${correlationId})`);
+      const route: unknown = request.route;
+      this.logger.error({
+        message: `Unhandled API exception (${correlationId})`,
+        correlationId,
+        method: request.method,
+        route:
+          typeof route === 'object' &&
+          route !== null &&
+          'path' in route &&
+          typeof route.path === 'string'
+            ? route.path
+            : undefined,
+        ...getErrorDiagnostics(exception),
+      });
     }
 
     response
@@ -42,6 +55,43 @@ export class ProblemDetailsFilter implements ExceptionFilter {
         correlationId,
       });
   }
+}
+
+function getErrorDiagnostics(exception: unknown) {
+  if (!(exception instanceof Error)) {
+    return { errorType: typeof exception };
+  }
+
+  const code: unknown =
+    'code' in exception
+      ? exception.code
+      : 'errorCode' in exception
+        ? exception.errorCode
+        : undefined;
+  const header = Error.prototype.toString.call(exception);
+  const stack = exception.stack;
+  // Prisma messages can span lines and contain query inputs; omit the full header.
+  const stackLocations = stack?.startsWith(`${header}\n`)
+    ? stack
+        .slice(header.length)
+        .split('\n')
+        .flatMap((line) => {
+          const location = line.match(
+            /^\s+at (?:async )?(?:.* \()?((?:file:\/\/\/|[A-Za-z]:[\\/]|\/|node:)[^()\r\n?#]+:\d+:\d+)\)?$/,
+          )?.[1];
+          return location ? [location] : [];
+        })
+    : [];
+
+  return {
+    errorType: exception.constructor.name,
+    errorCode:
+      typeof code === 'string' &&
+      /^(?:P\d{4}|[0-9A-Z]{5}|E[A-Z_]{1,63})$/.test(code)
+        ? code
+        : undefined,
+    stackLocations,
+  };
 }
 
 function getDetail(exception: HttpException): string {

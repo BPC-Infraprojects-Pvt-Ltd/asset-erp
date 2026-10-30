@@ -130,6 +130,82 @@ The following require end-to-end implementation and verification:
 
 Do not reuse BOQ-specific behavior as the general import contract.
 
+### 3.3 Current frontend source snapshot (2026-10-29)
+
+The current client source includes API-backed authentication, user
+administration, locations and stores, Administrator-managed asset categories
+at `/asset-categories`, the organization-wide read-only Administrator and
+location-scoped Asset Manager register at `/assets`, Asset Manager profile
+editing for category-specific specifications and optional purchase/warranty
+date/reference fields, commissioning with a registration/profile-change
+timeline, and print-ready Asset Manager labels at `/labels`. Label barcodes contain only
+internal asset IDs and resolve through the authenticated register lookup.
+The register also supports date-range filtering for warranty expiry. Asset
+details support scoped parent-child equipment links. Administrator-
+managed Departments and Cost Centers, Manufacturers & Models, and Employees
+are also live.
+Asset detail also presents a separate Installed Components panel with
+versioned install/removal commands and retained history. These commands do not
+rewrite availability or custody; installed components cannot be issued or
+moved independently until removed.
+Reservations are now a live Asset Manager workflow at `/reservations`, using
+active employee references and date-bounded availability holds. Creation and
+cancellation outcomes are server-backed; reservations do not change custody.
+Assignments & Returns are also live at `/assignments`; Asset Manager commands
+record custody and return evidence. Employee self-acknowledgment remains
+pending until the approved employee-login link is implemented.
+Transfers are live at `/transfers` for Asset Managers: multi-asset drafts,
+versioned dispatch, per-asset receipt results, and visible missing/rejected
+exceptions. Confirmed receipt alone updates an asset's location. Drafts can
+be cancelled; dispatched recovery and discrepancy reconciliation remain
+unavailable pending an approved recovery policy.
+Physical Verification is live at `/verification-campaigns` for Asset Managers.
+Each campaign holds a location-scoped snapshot; the page captures expected and
+unexpected observations, exposes discrepancies for explicit review, and
+requires all latest findings to be reviewed before completion. Reconciliation
+updates verification status only; it does not change location, custody,
+condition, or lifecycle. Photo uploads are not yet supported.
+Asset Managers can submit retirement requests with a reason and impact review
+at `/retirements`. Requests remain pending review and do not change asset
+lifecycle, location, availability, or custody; approval and disposal are not
+available in this increment.
+Accessories &amp; Spare Stock is live at `/stock` for Asset Managers. Hardware
+categories explicitly distinguish individual assets from quantity stock;
+stock balances are server-derived from receipt, issue, return, and transfer
+transactions, with separate reservations. Quantities currently use whole
+units only; adjustment commands are withheld pending an approved authority.
+Asset Imports are live at `/imports` for Asset Managers. The workflow accepts
+bounded UTF-8 CSV only, stores no source bytes or row values, persists a
+checksum-bound job and sanitized row errors, and re-uploads the matching file
+for an all-or-nothing commit. CSV may include optional category-specific
+specifications, purchase date, warranty expiry date, and one warranty/support
+reference. The job reference is kept in the URL; the browser keeps file
+contents only in the current page memory.
+The overview links to these capabilities without presenting fabricated
+operational metrics.
+
+The active sidebar also links to the product areas listed in
+`./requirement.md`. Feature pages without a live API use the shared
+`/modules/$moduleId` route and show a static frontend preview: no records are
+loaded, and no mutations or success outcomes are simulated. These previews
+are navigation and presentation scaffolding only; they are not evidence of
+backend implementation, permission enforcement, or feature acceptance.
+
+The `/modules/departments-cost-centers` route now uses the typed Master Data
+API for paged/searchable records and versioned create, edit, deactivate, and
+reactivate actions. Other previewable modules retain the explicit `demo=true`
+search mode with fictional, read-only fixtures. Their `form=true` previews use
+local React Hook Form/Zod validation only; they do not call business APIs or
+save records. Selecting a sample reference opens its detail view using the
+`record` search value. Demo mode does not create a second workspace or imply
+feature completion.
+
+The Administration Manufacturers & Models and Employees pages are also live.
+They use typed organization-scoped Master APIs; employee responses contain
+only the minimum reference fields and do not link employees to login users.
+Workflow and notification configuration remains a preview until approval
+authority, required evidence, and notification behavior are decided.
+
 ## 4. File Ownership
 
 Preserve existing conventions:
